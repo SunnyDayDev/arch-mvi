@@ -3,7 +3,7 @@ plugins {
     `maven-publish`
 }
 
-group = "sunnyday.dev"
+group = "dev.sunnyday"
 version = "0.1"
 
 repositories {

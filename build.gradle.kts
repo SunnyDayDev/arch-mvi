@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    `maven-publish`
 }
 
 group = "sunnyday.dev"
@@ -23,4 +24,16 @@ tasks.test {
 
 kotlin {
     jvmToolchain(8)
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = "dev.sunnyday"
+            artifactId = "arch-mvi"
+            version = "0.1"
+
+            from(components["kotlin"])
+        }
+    }
 }

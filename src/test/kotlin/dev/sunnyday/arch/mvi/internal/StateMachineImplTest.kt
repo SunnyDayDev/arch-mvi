@@ -17,7 +17,7 @@ import dev.sunnyday.arch.mvi.Reducer
 import dev.sunnyday.arch.mvi.StateTransition
 import dev.sunnyday.arch.mvi.StateTransitionListener
 import dev.sunnyday.arch.mvi.Update
-import dev.sunnyday.arch.mvi.test.collectWithScope
+import dev.sunnyday.arch.mvi.test.*
 import java.util.concurrent.TimeUnit
 import java.util.stream.Stream
 import kotlin.test.assertEquals
@@ -179,27 +179,11 @@ class StateMachineImplTest {
     ): StateMachineImpl<State, Event, SideEffect> {
         return StateMachineImpl(
             initialState = initialState,
-            coroutineScope = createStateMachineCoroutineScope(),
+            coroutineScope = createTestSubScope(),
             reducer = reducer,
             stateTransitionListener = stateTransitionListener,
         )
     }
-
-    private suspend fun createStateMachineCoroutineScope(): CoroutineScope {
-        val testCoroutineContext = currentCoroutineContext()
-        val testJob = testCoroutineContext.job
-        val stateMachineCoroutineScope = CoroutineScope(testCoroutineContext + SupervisorJob())
-        stateMachineCoroutineScope.launch {
-            testJob.join()
-            cancel()
-        }
-
-        return stateMachineCoroutineScope
-    }
-
-    data class State(val name: String = "state")
-    data class Event(val name: String = "event")
-    data class SideEffect(val name: String = "sideEffect")
 
     class AllUpdatesProvider : ArgumentsProvider {
 

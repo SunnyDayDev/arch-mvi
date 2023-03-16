@@ -1,8 +1,119 @@
 package dev.sunnyday.arch.mvi.internal
 
+import dev.sunnyday.arch.mvi.EventHandler
+import dev.sunnyday.arch.mvi.MviProcessor
+import dev.sunnyday.arch.mvi.SideEffectHandler
+import dev.sunnyday.arch.mvi.StateMachine
+import dev.sunnyday.arch.mvi.test.*
+import io.mockk.*
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+
+@OptIn(ExperimentalCoroutinesApi::class)
 class MviProcessorImplTest {
 
-    private fun createProcessor() {
+    private val eventsFlow = MutableSharedFlow<Event>()
+    private val sideEffectEventsFlow = MutableSharedFlow<Event>()
+    private val sideEffectsFlow = MutableSharedFlow<SideEffect>()
+    private val stateFlow = MutableStateFlow(State())
 
+    private val stateMachine = mockk<StateMachine<State, Event, SideEffect>>(relaxed = true)
+    private val eventHandler = mockk<EventHandler<InputEvent, Event>>(relaxed = true)
+    private val sideEffectHandler = mockk<SideEffectHandler<SideEffect, Event>>(relaxed = true)
+
+    @BeforeEach
+    fun setUp() {
+        every { eventHandler.outputEvents } returns eventsFlow
+        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow
+        every { stateMachine.sideEffects } returns sideEffectsFlow
+        every { stateMachine.state } returns stateFlow
+    }
+
+    @Test
+    fun `on start calls on event subscription ready`() = runTest {
+        every { eventHandler.outputEvents } returns eventsFlow.onStart { emit(Event("e:1")) }
+        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow.onStart { emit(Event("s:1")) }
+
+        createProcessor {
+            delay(1) // without delay advanceUntilIdle doesn't await for emit
+            eventsFlow.emit(Event("e:2"))
+            sideEffectEventsFlow.emit(Event("s:2"))
+        }
+
+        advanceUntilIdle()
+
+        excludeRecords { stateMachine.sideEffects }
+        verifyAll {
+            stateMachine.onEvent(Event("e:1"))
+            stateMachine.onEvent(Event("e:2"))
+            stateMachine.onEvent(Event("s:1"))
+            stateMachine.onEvent(Event("s:2"))
+        }
+        confirmVerified(stateMachine)
+    }
+
+    @Test
+    fun `events from eventHandler sends to state machine`() = runTest(UnconfinedTestDispatcher()) {
+        val event = Event()
+        createProcessor()
+
+        eventsFlow.emit(event)
+
+        excludeRecords { stateMachine.sideEffects }
+        verify { stateMachine.onEvent(refEq(event)) }
+        confirmVerified(stateMachine)
+    }
+
+    @Test
+    fun `input event sends to event handler`() = runTest(UnconfinedTestDispatcher()) {
+        val event = InputEvent()
+        val processor = createProcessor()
+
+        processor.onEvent(event)
+
+        excludeRecords { eventHandler.outputEvents }
+        verify { eventHandler.onEvent(refEq(event)) }
+        confirmVerified(eventHandler)
+    }
+
+    @Test
+    fun `side effects sends to side effect handler`() = runTest(UnconfinedTestDispatcher()) {
+        val sideEffect = SideEffect()
+        createProcessor()
+
+        sideEffectsFlow.emit(sideEffect)
+
+        excludeRecords { sideEffectHandler.outputEvents }
+        verify { sideEffectHandler.onSideEffect(refEq(sideEffect)) }
+        confirmVerified(sideEffectHandler)
+    }
+
+    @Test
+    fun `processor state is state machine state`() = runTest(UnconfinedTestDispatcher()) {
+        val processor = createProcessor()
+        val states = processor.state.collectWithScope()
+
+        stateFlow.emit(State("2"))
+
+        assertEquals(listOf(State(), State("2")), states)
+    }
+
+    private suspend fun createProcessor(onStartHandler: (suspend () -> Unit)? = null): MviProcessor<State, InputEvent> {
+        return MviProcessorImpl(
+            coroutineScope = createTestSubScope(),
+            eventHandler = eventHandler,
+            stateMachine = stateMachine,
+            sideEffectHandler = sideEffectHandler,
+            onStartHandler = onStartHandler,
+        )
     }
 }

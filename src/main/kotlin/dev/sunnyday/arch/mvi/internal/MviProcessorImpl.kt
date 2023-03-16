@@ -13,7 +13,7 @@ internal class MviProcessorImpl<State : Any, InputEvent : Any, Event : Any, Side
     private val eventHandler: EventHandler<InputEvent, Event>,
     private val sideEffectHandler: SideEffectHandler<SideEffect, Event>,
     private val stateMachine: StateMachine<State, Event, SideEffect>,
-    onStartHandler: (() -> Unit)? = null,
+    onStartHandler: (suspend () -> Unit)? = null,
 ) : MviProcessor<State, InputEvent> {
 
     init {

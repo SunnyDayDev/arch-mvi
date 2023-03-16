@@ -20,3 +20,15 @@ suspend fun <T : Any> Flow<T>.collectWithScope(): List<T> {
 
     return collector
 }
+
+suspend fun createTestSubScope(): CoroutineScope {
+    val testCoroutineContext = currentCoroutineContext()
+    val testJob = testCoroutineContext.job
+    val stateMachineCoroutineScope = CoroutineScope(testCoroutineContext + SupervisorJob())
+    stateMachineCoroutineScope.launch {
+        testJob.join()
+        cancel()
+    }
+
+    return stateMachineCoroutineScope
+}

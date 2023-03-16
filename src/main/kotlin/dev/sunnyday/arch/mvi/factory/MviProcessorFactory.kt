@@ -54,7 +54,7 @@ object MviProcessorFactory {
         stateMachine: StateMachine<State, Event, SideEffect>,
         eventHandler: EventHandler<InputEvent, Event>,
         sideEffectHandler: SideEffectHandler<SideEffect, Event> = EmptySideEffectHandler(),
-        onStartHandler: (() -> Unit)? = null,
+        onStartHandler: (suspend () -> Unit)? = null,
     ): MviProcessor<State, InputEvent> {
         // It's safe to cast, because instance of TransparentEventHandler creates only inside factory
         @Suppress("UNCHECKED_CAST")

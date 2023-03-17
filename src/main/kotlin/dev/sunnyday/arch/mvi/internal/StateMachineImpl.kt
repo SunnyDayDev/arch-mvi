@@ -57,7 +57,8 @@ internal class StateMachineImpl<out State : Any, in Event : Any, out SideEffect 
     override fun onEvent(event: Event) {
         var result = eventActor.trySend(event)
 
-        // TODO: implement better suspending onEvent
+        // TODO: https://github.com/SunnyDayDev/arch-mvi/issues/13
+        //  implement better suspending onEvent
         while (result.isFailure && !result.isClosed) {
             Thread.sleep(1)
             if (Thread.currentThread().isInterrupted) return

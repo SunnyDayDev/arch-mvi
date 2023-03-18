@@ -3,18 +3,17 @@ package dev.sunnyday.arch.mvi.internal.event_handler
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import dev.sunnyday.arch.mvi.primitive.EventConsumer
 import dev.sunnyday.arch.mvi.test.collectWithScope
+import dev.sunnyday.arch.mvi.test.runUnconfinedTest
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TransparentEventHandlerTest {
 
     @Test
-    fun `resend event as is`() = runTest(UnconfinedTestDispatcher()) {
+    fun `resend event as is`() = runUnconfinedTest {
         val event = "event"
         val receiver = mockk<EventConsumer<String>>(relaxed = true)
         val handler = TransparentEventHandler<String>().apply {

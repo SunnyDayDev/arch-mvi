@@ -65,6 +65,10 @@ internal class StateMachineImpl<out State : Any, in Event : Any, out SideEffect 
         }
     }
 
+    override fun cancel() {
+        eventActor.close()
+    }
+
     private companion object {
 
         const val ACTOR_EVENT_CAPACITY = 16

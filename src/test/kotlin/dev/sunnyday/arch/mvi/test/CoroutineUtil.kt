@@ -2,6 +2,11 @@ package dev.sunnyday.arch.mvi.test
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 suspend fun <T : Any> Flow<T>.collectWithScope(): List<T> {
     val flow = this
@@ -32,3 +37,10 @@ suspend fun createTestSubScope(): CoroutineScope {
 
     return stateMachineCoroutineScope
 }
+
+@ExperimentalCoroutinesApi
+fun runUnconfinedTest(
+    context: CoroutineContext = EmptyCoroutineContext,
+    dispatchTimeoutMs: Long = 60_000L,
+    testBody: suspend TestScope.() -> Unit
+) = runTest(context + UnconfinedTestDispatcher(), dispatchTimeoutMs, testBody)

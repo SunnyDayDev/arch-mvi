@@ -11,7 +11,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
@@ -62,7 +61,7 @@ class MviProcessorImplTest {
     }
 
     @Test
-    fun `events from eventHandler sends to state machine`() = runTest(UnconfinedTestDispatcher()) {
+    fun `events from eventHandler sends to state machine`() = runUnconfinedTest {
         val event = Event()
         createProcessor()
 
@@ -74,7 +73,7 @@ class MviProcessorImplTest {
     }
 
     @Test
-    fun `input event sends to event handler`() = runTest(UnconfinedTestDispatcher()) {
+    fun `input event sends to event handler`() = runUnconfinedTest {
         val event = InputEvent()
         val processor = createProcessor()
 
@@ -86,7 +85,7 @@ class MviProcessorImplTest {
     }
 
     @Test
-    fun `side effects sends to side effect handler`() = runTest(UnconfinedTestDispatcher()) {
+    fun `side effects sends to side effect handler`() = runUnconfinedTest {
         val sideEffect = SideEffect()
         createProcessor()
 
@@ -98,13 +97,31 @@ class MviProcessorImplTest {
     }
 
     @Test
-    fun `processor state is state machine state`() = runTest(UnconfinedTestDispatcher()) {
+    fun `processor state is state machine state`() = runUnconfinedTest {
         val processor = createProcessor()
         val states = processor.state.collectWithScope()
 
         stateFlow.emit(State("2"))
 
         assertEquals(listOf(State(), State("2")), states)
+    }
+
+    @Test
+    fun `on cancel processor stops event handling`() = runUnconfinedTest {
+        val processor = createProcessor()
+        processor.cancel()
+
+        processor.onEvent(InputEvent())
+        sideEffectsFlow.emit(SideEffect())
+        eventsFlow.emit(Event())
+
+        excludeRecords {
+            eventHandler.outputEvents
+            sideEffectHandler.outputEvents
+            stateMachine.sideEffects
+        }
+        verify { stateMachine.cancel() }
+        confirmVerified(eventHandler, stateMachine, sideEffectHandler)
     }
 
     private suspend fun createProcessor(onStartHandler: (suspend () -> Unit)? = null): MviProcessor<State, InputEvent> {

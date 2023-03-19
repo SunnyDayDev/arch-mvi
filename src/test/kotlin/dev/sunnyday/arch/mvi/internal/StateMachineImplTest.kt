@@ -4,8 +4,6 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.*
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.extension.ExtensionContext
@@ -18,6 +16,8 @@ import dev.sunnyday.arch.mvi.StateTransition
 import dev.sunnyday.arch.mvi.StateTransitionListener
 import dev.sunnyday.arch.mvi.Update
 import dev.sunnyday.arch.mvi.test.*
+import io.mockk.confirmVerified
+import kotlinx.coroutines.test.advanceUntilIdle
 import java.util.concurrent.TimeUnit
 import java.util.stream.Stream
 import kotlin.test.assertEquals
@@ -30,14 +30,14 @@ class StateMachineImplTest {
     private val reducer = mockk<Reducer<State, Event, Update<State, SideEffect>>>()
 
     @Test
-    fun `starts with initial state`() = runTest(UnconfinedTestDispatcher()) {
+    fun `starts with initial state`() = runUnconfinedTest {
         val expectedInitialState = State("initial")
         val stateMachine = createStateMachine(initialState = expectedInitialState)
         assertEquals(expectedInitialState, stateMachine.state.value)
     }
 
     @Test
-    fun `on event, reduce state`() = runTest(UnconfinedTestDispatcher()) {
+    fun `on event, reduce state`() = runUnconfinedTest {
         val initialState = State("initial")
         val expectedState = State("reduced")
         val event = Event("event")
@@ -54,7 +54,7 @@ class StateMachineImplTest {
     @ArgumentsSource(NoStateUpdatesProvider::class)
     fun `if state isn't changed on event, nothing happens`(
         update: Update<State, SideEffect>,
-    ) = runTest(UnconfinedTestDispatcher()) {
+    ) = runUnconfinedTest {
         every { reducer.reduce(any(), any()) } returns update
 
         val stateMachine = createStateMachine()
@@ -68,7 +68,7 @@ class StateMachineImplTest {
     }
 
     @Test
-    fun `on event, reduce side effects`() = runTest(UnconfinedTestDispatcher()) {
+    fun `on event, reduce side effects`() = runUnconfinedTest {
         val event = Event("event")
         val sideEffect = SideEffect("sideEffect")
         every { reducer.reduce(any(), any()) } returns Update.sideEffects(sideEffect)
@@ -81,7 +81,7 @@ class StateMachineImplTest {
     }
 
     @Test
-    fun `sideEffects doesn't replay`() = runTest(UnconfinedTestDispatcher()) {
+    fun `sideEffects doesn't replay`() = runUnconfinedTest {
         every { reducer.reduce(any(), any()) } returns Update.sideEffects(SideEffect())
         val stateMachine = createStateMachine()
         stateMachine.sideEffects.collectWithScope() // first subscriber side effects
@@ -93,7 +93,7 @@ class StateMachineImplTest {
     }
 
     @Test
-    fun `sideEffects awaits for the first subscriber`() = runTest(UnconfinedTestDispatcher()) {
+    fun `sideEffects awaits for the first subscriber`() = runUnconfinedTest {
         val sideEffect = SideEffect("some")
         every { reducer.reduce(any(), any()) } returns Update.sideEffects(listOf(sideEffect))
         val stateMachine = createStateMachine()
@@ -108,7 +108,7 @@ class StateMachineImplTest {
     @ArgumentsSource(NoSideEffectUpdatesProvider::class)
     fun `if sideEffects isn't reduced on event, nothing happens`(
         update: Update<State, SideEffect>,
-    ) = runTest(UnconfinedTestDispatcher()) {
+    ) = runUnconfinedTest {
         every { reducer.reduce(any(), any()) } returns update
 
         val stateMachine = createStateMachine()
@@ -121,7 +121,7 @@ class StateMachineImplTest {
     }
 
     @Test
-    fun `on event, can reduce both, state and sideEffect`() = runTest(UnconfinedTestDispatcher()) {
+    fun `on event, can reduce both, state and sideEffect`() = runUnconfinedTest {
         every { reducer.reduce(any(), any()) } returnsMany listOf(
             Update.stateWithSideEffects(State("1"), SideEffect("1")),
             Update.stateWithSideEffects(State("2"), listOf(SideEffect("2"))),
@@ -148,7 +148,7 @@ class StateMachineImplTest {
     @ArgumentsSource(AllUpdatesProvider::class)
     fun `on event, notify state transition listener`(
         update: Update<State, SideEffect>,
-    ) = runTest(UnconfinedTestDispatcher()) {
+    ) = runUnconfinedTest {
         val initialState = State("initial")
         val triggerEvent = Event("trigger")
         every { reducer.reduce(any(), any()) } returns update
@@ -161,6 +161,7 @@ class StateMachineImplTest {
         )
 
         stateMachine.onEvent(triggerEvent)
+        advanceUntilIdle()
 
         assertEquals(
             StateTransition(
@@ -171,6 +172,25 @@ class StateMachineImplTest {
             ),
             stateTransitionLog.singleOrNull()
         )
+    }
+
+    @Test
+    fun `on cancel state machine stops event handling`() = runUnconfinedTest {
+        every { reducer.reduce(any(), any()) } returns Update.stateWithSideEffects(
+            State("reduced"),
+            SideEffect("reduced"),
+        )
+
+        val stateMachine = createStateMachine()
+        val states = stateMachine.state.collectWithScope()
+        val sideEffect = stateMachine.sideEffects.collectWithScope()
+
+        stateMachine.cancel()
+        stateMachine.onEvent(Event())
+
+        confirmVerified(reducer)
+        assertEquals(states, listOf(State()))
+        assertEquals(sideEffect, emptyList())
     }
 
     private suspend fun createStateMachine(

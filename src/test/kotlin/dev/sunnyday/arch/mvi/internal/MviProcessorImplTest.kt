@@ -4,6 +4,7 @@ import dev.sunnyday.arch.mvi.EventHandler
 import dev.sunnyday.arch.mvi.MviProcessor
 import dev.sunnyday.arch.mvi.SideEffectHandler
 import dev.sunnyday.arch.mvi.StateMachine
+import dev.sunnyday.arch.mvi.coroutines.toObservable
 import dev.sunnyday.arch.mvi.test.*
 import io.mockk.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -11,7 +12,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
@@ -32,16 +32,20 @@ class MviProcessorImplTest {
 
     @BeforeEach
     fun setUp() {
-        every { eventHandler.outputEvents } returns eventsFlow
-        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow
-        every { stateMachine.sideEffects } returns sideEffectsFlow
-        every { stateMachine.state } returns stateFlow
+        every { eventHandler.outputEvents } returns eventsFlow.toObservable()
+        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow.toObservable()
+        every { stateMachine.sideEffects } returns sideEffectsFlow.toObservable()
+        every { stateMachine.state } returns stateFlow.toObservable()
     }
 
     @Test
     fun `on start calls on event subscription ready`() = runTest {
-        every { eventHandler.outputEvents } returns eventsFlow.onStart { emit(Event("e:1")) }
-        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow.onStart { emit(Event("s:1")) }
+        every { eventHandler.outputEvents } returns eventsFlow
+            .onStart { emit(Event("e:1")) }
+            .toObservable()
+        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow
+            .onStart { emit(Event("s:1")) }
+            .toObservable()
 
         createProcessor {
             delay(1) // without delay advanceUntilIdle doesn't await for emit
@@ -62,7 +66,7 @@ class MviProcessorImplTest {
     }
 
     @Test
-    fun `events from eventHandler sends to state machine`() = runTest(UnconfinedTestDispatcher()) {
+    fun `events from eventHandler sends to state machine`() = runUnconfinedTest {
         val event = Event()
         createProcessor()
 
@@ -74,7 +78,7 @@ class MviProcessorImplTest {
     }
 
     @Test
-    fun `input event sends to event handler`() = runTest(UnconfinedTestDispatcher()) {
+    fun `input event sends to event handler`() = runUnconfinedTest {
         val event = InputEvent()
         val processor = createProcessor()
 
@@ -86,7 +90,7 @@ class MviProcessorImplTest {
     }
 
     @Test
-    fun `side effects sends to side effect handler`() = runTest(UnconfinedTestDispatcher()) {
+    fun `side effects sends to side effect handler`() = runUnconfinedTest {
         val sideEffect = SideEffect()
         createProcessor()
 
@@ -98,13 +102,31 @@ class MviProcessorImplTest {
     }
 
     @Test
-    fun `processor state is state machine state`() = runTest(UnconfinedTestDispatcher()) {
+    fun `processor state is state machine state`() = runUnconfinedTest {
         val processor = createProcessor()
         val states = processor.state.collectWithScope()
 
         stateFlow.emit(State("2"))
 
         assertEquals(listOf(State(), State("2")), states)
+    }
+
+    @Test
+    fun `on cancel processor stops event handling`() = runUnconfinedTest {
+        val processor = createProcessor()
+        processor.cancel()
+
+        processor.onEvent(InputEvent())
+        sideEffectsFlow.emit(SideEffect())
+        eventsFlow.emit(Event())
+
+        excludeRecords {
+            eventHandler.outputEvents
+            sideEffectHandler.outputEvents
+            stateMachine.sideEffects
+        }
+        verify { stateMachine.cancel() }
+        confirmVerified(eventHandler, stateMachine, sideEffectHandler)
     }
 
     private suspend fun createProcessor(onStartHandler: (suspend () -> Unit)? = null): MviProcessor<State, InputEvent> {

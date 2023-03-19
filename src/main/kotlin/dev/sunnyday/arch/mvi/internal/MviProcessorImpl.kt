@@ -5,7 +5,9 @@ import dev.sunnyday.arch.mvi.EventHandler
 import dev.sunnyday.arch.mvi.MviProcessor
 import dev.sunnyday.arch.mvi.SideEffectHandler
 import dev.sunnyday.arch.mvi.StateMachine
-import dev.sunnyday.arch.mvi.internal.util.flow.takeUntil
+import dev.sunnyday.arch.mvi.coroutines.toFlow
+import dev.sunnyday.arch.mvi.coroutines.takeUntil
+import dev.sunnyday.arch.mvi.primitive.ObservableValue
 import kotlinx.coroutines.*
 
 internal class MviProcessorImpl<State : Any, InputEvent : Any, Event : Any, SideEffect : Any>(
@@ -30,7 +32,7 @@ internal class MviProcessorImpl<State : Any, InputEvent : Any, Event : Any, Side
         }
     }
 
-    override val state: StateFlow<State>
+    override val state: ObservableValue<State>
         get() = stateMachine.state
 
     private fun getOneShotOnStartHandler(onStartHandler: (suspend () -> Unit)?): (suspend () -> Unit)? {
@@ -44,7 +46,10 @@ internal class MviProcessorImpl<State : Any, InputEvent : Any, Event : Any, Side
     }
 
     private suspend fun collectEvents(coroutineScope: CoroutineScope, onSubscription: (suspend () -> Unit)?) {
-        val mergedEventsSource = merge(eventHandler.outputEvents, sideEffectHandler.outputEvents)
+        val mergedEventsSource = merge(
+            eventHandler.outputEvents.toFlow(),
+            sideEffectHandler.outputEvents.toFlow(),
+        )
 
         val eventsSource = if (onSubscription == null) {
             mergedEventsSource
@@ -60,7 +65,7 @@ internal class MviProcessorImpl<State : Any, InputEvent : Any, Event : Any, Side
     }
 
     private suspend fun collectSideEffects() {
-        stateMachine.sideEffects
+        stateMachine.sideEffects.toFlow()
             .takeUntil(cancelSignal)
             .collect(sideEffectHandler::onSideEffect)
     }

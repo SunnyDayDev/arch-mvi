@@ -4,6 +4,7 @@ import dev.sunnyday.arch.mvi.EventHandler
 import dev.sunnyday.arch.mvi.MviProcessor
 import dev.sunnyday.arch.mvi.SideEffectHandler
 import dev.sunnyday.arch.mvi.StateMachine
+import dev.sunnyday.arch.mvi.coroutines.toObservable
 import dev.sunnyday.arch.mvi.test.*
 import io.mockk.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,16 +32,20 @@ class MviProcessorImplTest {
 
     @BeforeEach
     fun setUp() {
-        every { eventHandler.outputEvents } returns eventsFlow
-        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow
-        every { stateMachine.sideEffects } returns sideEffectsFlow
-        every { stateMachine.state } returns stateFlow
+        every { eventHandler.outputEvents } returns eventsFlow.toObservable()
+        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow.toObservable()
+        every { stateMachine.sideEffects } returns sideEffectsFlow.toObservable()
+        every { stateMachine.state } returns stateFlow.toObservable()
     }
 
     @Test
     fun `on start calls on event subscription ready`() = runTest {
-        every { eventHandler.outputEvents } returns eventsFlow.onStart { emit(Event("e:1")) }
-        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow.onStart { emit(Event("s:1")) }
+        every { eventHandler.outputEvents } returns eventsFlow
+            .onStart { emit(Event("e:1")) }
+            .toObservable()
+        every { sideEffectHandler.outputEvents } returns sideEffectEventsFlow
+            .onStart { emit(Event("s:1")) }
+            .toObservable()
 
         createProcessor {
             delay(1) // without delay advanceUntilIdle doesn't await for emit

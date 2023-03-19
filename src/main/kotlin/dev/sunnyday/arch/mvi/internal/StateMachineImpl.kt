@@ -5,6 +5,10 @@ import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.flow.*
 import dev.sunnyday.arch.mvi.*
 import dev.sunnyday.arch.mvi.Reducer
+import dev.sunnyday.arch.mvi.coroutines.toObservable
+import dev.sunnyday.arch.mvi.primitive.Observable
+import dev.sunnyday.arch.mvi.primitive.ObservableValue
+import kotlinx.coroutines.channels.Channel
 
 @OptIn(FlowPreview::class)
 internal class StateMachineImpl<out State : Any, in Event : Any, out SideEffect : Any>(
@@ -14,22 +18,28 @@ internal class StateMachineImpl<out State : Any, in Event : Any, out SideEffect 
     private val stateTransitionListener: StateTransitionListener<StateTransition<State, Event, SideEffect>>? = null,
 ) : StateMachine<State, Event, SideEffect> {
 
-    override val state: StateFlow<State> get() = _state.asStateFlow()
-    private val _state = MutableStateFlow(initialState)
+    private val stateFlow = MutableStateFlow(initialState)
+    private val sideEffectsFlow = MutableSharedFlow<List<SideEffect>>()
 
-    override val sideEffects: Flow<SideEffect>
-        get() = _sideEffects.flatMapMerge { sideEffects -> sideEffects.asFlow() }
-    private val _sideEffects = MutableSharedFlow<List<SideEffect>>()
+    override val state: ObservableValue<State> = stateFlow.toObservable(coroutineScope)
+
+    override val sideEffects: Observable<SideEffect> = sideEffectsFlow
+        .flatMapConcat { it.asFlow() }
+        .toObservable(coroutineScope)
 
     @Suppress("RemoveExplicitTypeArguments") // compiler bug
     @OptIn(ObsoleteCoroutinesApi::class)
     private val eventActor = coroutineScope.actor<Event>(capacity = ACTOR_EVENT_CAPACITY) {
+        proceedEvents(coroutineScope, channel)
+    }
+
+    private suspend fun proceedEvents(coroutineScope: CoroutineScope, channel: Channel<Event>) {
         for (event in channel) {
-            val currentState = _state.value
+            val currentState = stateFlow.value
             val (state, sideEffects) = reducer.reduce(currentState, event)
 
             if (state != null) {
-                _state.value = state
+                stateFlow.value = state
             }
 
             if (sideEffects.isNotEmpty()) {
@@ -50,8 +60,8 @@ internal class StateMachineImpl<out State : Any, in Event : Any, out SideEffect 
     }
 
     private suspend fun sendSideEffects(sideEffects: List<SideEffect>) {
-        _sideEffects.subscriptionCount.first { it > 0 }
-        _sideEffects.emit(sideEffects)
+        sideEffectsFlow.subscriptionCount.first { it > 0 }
+        sideEffectsFlow.emit(sideEffects)
     }
 
     override fun onEvent(event: Event) {

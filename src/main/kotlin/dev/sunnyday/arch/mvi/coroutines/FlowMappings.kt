@@ -10,7 +10,7 @@ import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.flow.*
 
 fun <T> Observable<T>.toFlow(): Flow<T> {
-    return if (this is CoroutineObservable<T>) {
+    return if (this is CoroutineObservable) {
         flow
     } else {
         callbackFlow {
@@ -31,7 +31,7 @@ fun <T> Observable<T>.toFlow(): Flow<T> {
 }
 
 fun <T> ObservableValue<T>.toStateFlow(coroutineScope: CoroutineScope): StateFlow<T> {
-    return if (this is CoroutineObservableValue<T>) {
+    return if (this is CoroutineObservableValue) {
         stateFlow
     } else {
         toFlow().stateIn(coroutineScope, SharingStarted.Eagerly, value)

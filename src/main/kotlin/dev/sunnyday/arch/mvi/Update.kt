@@ -44,19 +44,25 @@ class Update<out State : Any, out SideEffect : Any> private constructor(
 
     companion object {
 
+        @JvmStatic
         fun nothing(): Update<Nothing, Nothing> = Update(null, emptyList())
 
+        @JvmStatic
         fun <S : Any> state(state: S): Update<S, Nothing> = Update(state, emptyList())
 
+        @JvmStatic
         fun <SE : Any> sideEffects(sideEffects: List<SE>): Update<Nothing, SE> = Update(null, sideEffects)
 
+        @JvmStatic
         fun <SE : Any> sideEffects(vararg sideEffects: SE): Update<Nothing, SE> = Update(null, sideEffects.asList())
 
+        @JvmStatic
         fun <S : Any, SE : Any> stateWithSideEffects(
             state: S,
             sideEffects: List<SE>,
         ): Update<S, SE> = Update(state, sideEffects)
 
+        @JvmStatic
         fun <S : Any, SE : Any> stateWithSideEffects(
             state: S,
             vararg sideEffects: SE,

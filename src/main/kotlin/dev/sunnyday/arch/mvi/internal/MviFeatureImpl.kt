@@ -2,21 +2,23 @@ package dev.sunnyday.arch.mvi.internal
 
 import kotlinx.coroutines.flow.*
 import dev.sunnyday.arch.mvi.EventHandler
-import dev.sunnyday.arch.mvi.MviProcessor
+import dev.sunnyday.arch.mvi.MviFeature
 import dev.sunnyday.arch.mvi.SideEffectHandler
 import dev.sunnyday.arch.mvi.StateMachine
 import dev.sunnyday.arch.mvi.coroutines.toFlow
 import dev.sunnyday.arch.mvi.coroutines.takeUntil
 import dev.sunnyday.arch.mvi.primitive.ObservableValue
+import dev.sunnyday.arch.mvi.primitive.OnReadyCallback
 import kotlinx.coroutines.*
+import java.util.concurrent.atomic.AtomicReference
 
-internal class MviProcessorImpl<State : Any, InputEvent : Any, Event : Any, SideEffect : Any>(
+internal class MviFeatureImpl<State : Any, InputEvent : Any, Event : Any, SideEffect : Any>(
     coroutineScope: CoroutineScope,
     private val eventHandler: EventHandler<InputEvent, Event>,
     private val sideEffectHandler: SideEffectHandler<SideEffect, Event>,
     private val stateMachine: StateMachine<State, Event, SideEffect>,
-    onStartHandler: (suspend () -> Unit)? = null,
-) : MviProcessor<State, InputEvent> {
+    onReadyCallback: OnReadyCallback?,
+) : MviFeature<State, InputEvent> {
 
     private val isCancelled = MutableStateFlow(false)
 
@@ -24,10 +26,10 @@ internal class MviProcessorImpl<State : Any, InputEvent : Any, Event : Any, Side
         get() = isCancelled.filter { it }
 
     init {
-        val onSubscription = getOneShotOnStartHandler(onStartHandler)
+        val onReadyCallbackWrapper = AtomicReference(onReadyCallback)
 
         coroutineScope.launch(SupervisorJob()) {
-            launch { collectEvents(this, onSubscription) }
+            launch { collectEvents(this, onReadyCallbackWrapper) }
             launch { collectSideEffects() }
         }
     }
@@ -35,28 +37,21 @@ internal class MviProcessorImpl<State : Any, InputEvent : Any, Event : Any, Side
     override val state: ObservableValue<State>
         get() = stateMachine.state
 
-    private fun getOneShotOnStartHandler(onStartHandler: (suspend () -> Unit)?): (suspend () -> Unit)? {
-        onStartHandler ?: return null
-        var onStarHandlerInstance = onStartHandler
-
-        return {
-            onStarHandlerInstance?.invoke()
-            onStarHandlerInstance = null
-        }
-    }
-
-    private suspend fun collectEvents(coroutineScope: CoroutineScope, onSubscription: (suspend () -> Unit)?) {
+    private suspend fun collectEvents(
+        coroutineScope: CoroutineScope,
+        onSubscription: AtomicReference<OnReadyCallback?>,
+    ) {
         val mergedEventsSource = merge(
             eventHandler.outputEvents.toFlow(),
             sideEffectHandler.outputEvents.toFlow(),
         )
 
-        val eventsSource = if (onSubscription == null) {
+        val eventsSource = if (onSubscription.get() == null) {
             mergedEventsSource
         } else {
             mergedEventsSource
                 .shareIn(coroutineScope, SharingStarted.Lazily)
-                .onSubscription { onSubscription.invoke() }
+                .onSubscription { onSubscription.getAndSet(null)?.onReady() }
         }
 
         eventsSource

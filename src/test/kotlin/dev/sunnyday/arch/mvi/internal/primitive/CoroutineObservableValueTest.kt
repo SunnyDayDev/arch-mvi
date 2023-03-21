@@ -8,8 +8,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertSame
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CoroutineObservableValueTest {

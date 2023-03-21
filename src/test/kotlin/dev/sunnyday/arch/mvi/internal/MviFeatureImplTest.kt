@@ -1,10 +1,11 @@
 package dev.sunnyday.arch.mvi.internal
 
 import dev.sunnyday.arch.mvi.EventHandler
-import dev.sunnyday.arch.mvi.MviProcessor
+import dev.sunnyday.arch.mvi.MviFeature
 import dev.sunnyday.arch.mvi.SideEffectHandler
 import dev.sunnyday.arch.mvi.StateMachine
 import dev.sunnyday.arch.mvi.coroutines.toObservable
+import dev.sunnyday.arch.mvi.primitive.OnReadyCallback
 import dev.sunnyday.arch.mvi.test.*
 import io.mockk.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -12,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.BeforeEach
@@ -19,7 +21,7 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class MviProcessorImplTest {
+class MviFeatureImplTest {
 
     private val eventsFlow = MutableSharedFlow<Event>()
     private val sideEffectEventsFlow = MutableSharedFlow<Event>()
@@ -48,9 +50,11 @@ class MviProcessorImplTest {
             .toObservable()
 
         createProcessor {
-            delay(1) // without delay advanceUntilIdle doesn't await for emit
-            eventsFlow.emit(Event("e:2"))
-            sideEffectEventsFlow.emit(Event("s:2"))
+            launch {
+                delay(1)
+                eventsFlow.emit(Event("e:2"))
+                sideEffectEventsFlow.emit(Event("s:2"))
+            }
         }
 
         advanceUntilIdle()
@@ -129,13 +133,13 @@ class MviProcessorImplTest {
         confirmVerified(eventHandler, stateMachine, sideEffectHandler)
     }
 
-    private suspend fun createProcessor(onStartHandler: (suspend () -> Unit)? = null): MviProcessor<State, InputEvent> {
-        return MviProcessorImpl(
+    private suspend fun createProcessor(onReadyCallback: OnReadyCallback? = null): MviFeature<State, InputEvent> {
+        return MviFeatureImpl(
             coroutineScope = createTestSubScope(),
             eventHandler = eventHandler,
             stateMachine = stateMachine,
             sideEffectHandler = sideEffectHandler,
-            onStartHandler = onStartHandler,
+            onReadyCallback = onReadyCallback,
         )
     }
 }

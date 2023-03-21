@@ -14,14 +14,14 @@ fun <T> Observable<T>.toFlow(): Flow<T> {
         flow
     } else {
         callbackFlow {
-            val cancellable = observe {
-                var result = trySendBlocking(it)
+            val cancellable = observe { value ->
+                var result = trySendBlocking(value)
 
                 // TODO: https://github.com/SunnyDayDev/arch-mvi/issues/13
                 //  implement better suspending in non coroutine context
                 while (result.isFailure && !result.isClosed) {
                     Thread.sleep(1)
-                    result = trySendBlocking(it)
+                    result = trySendBlocking(value)
                 }
             }
 

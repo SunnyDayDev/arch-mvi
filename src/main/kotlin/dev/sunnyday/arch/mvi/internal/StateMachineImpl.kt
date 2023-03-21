@@ -13,7 +13,7 @@ import kotlinx.coroutines.channels.Channel
 @OptIn(FlowPreview::class)
 internal class StateMachineImpl<out State : Any, in Event : Any, out SideEffect : Any>(
     initialState: State,
-    coroutineScope: CoroutineScope,
+    val coroutineScope: CoroutineScope,
     private val reducer: Reducer<State, Event, Update<State, SideEffect>>,
     private val stateTransitionListener: StateTransitionListener<StateTransition<State, Event, SideEffect>>? = null,
 ) : StateMachine<State, Event, SideEffect> {

@@ -2,8 +2,8 @@ package dev.sunnyday.arch.mvi
 
 import dev.sunnyday.arch.mvi.test.SideEffect
 import dev.sunnyday.arch.mvi.test.State
-import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import kotlin.test.assertTrue
 
 class UpdateTest {
 

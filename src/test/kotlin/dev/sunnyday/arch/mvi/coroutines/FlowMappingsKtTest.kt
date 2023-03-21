@@ -10,10 +10,11 @@ import dev.sunnyday.arch.mvi.test.runUnconfinedTest
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.*
 import org.junit.jupiter.api.Test
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.properties.Delegates
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
@@ -32,14 +33,21 @@ class FlowMappingsKtTest {
     }
 
     @Test
-    fun `toFlow on other Observable properly maps to flow`() = runTest {
+    fun `toFlow on other Observable properly maps to flow`() = TestScope(TestCoroutineScheduler()).runTest {
         val cancellable = mockk<Cancellable>(relaxed = true)
-        val emittedValues = mutableListOf<String>()
+        val emittedValues = AtomicReference<List<String>>(emptyList())
+        val stepsChannel = Channel<Unit>(3)
         val observable = Observable { observer ->
+            stepsChannel.trySend(Unit)
+
             observer.invoke("one")
-            emittedValues.add("one")
+            emittedValues.set(emittedValues.get() + "one")
+            stepsChannel.trySend(Unit)
+
             observer.invoke("two")
-            emittedValues.add("two")
+            emittedValues.set(emittedValues.get() + "two")
+            stepsChannel.trySend(Unit)
+
             cancellable
         }
 
@@ -50,13 +58,20 @@ class FlowMappingsKtTest {
             .take(2)
             .collectWithScope()
 
+        stepsChannel.receive()
+
         advanceTimeBy(50)
-        assertEquals(listOf("one"), emittedValues)
+        assertEquals(listOf("one"), emittedValues.get())
+        assertEquals(emptyList(), flowItems)
+
+        stepsChannel.receive()
 
         advanceTimeBy(100)
-        assertEquals(listOf("one", "two"), emittedValues)
-
+        assertEquals(listOf("one", "two"), emittedValues.get())
         assertEquals(listOf("one", "two"), flowItems)
+
+        stepsChannel.receive()
+
         verify { cancellable.cancel() }
     }
 
@@ -74,9 +89,9 @@ class FlowMappingsKtTest {
     @Test
     fun `toStateFlow on other ObservableValues properly maps to flow`() = runUnconfinedTest {
         val cancellable = mockk<Cancellable>(relaxed = true)
-        val observable = object  : ObservableValue<String> {
+        val observable = object : ObservableValue<String> {
 
-            override var value: String by Delegates.observable( "value") { _, _, newValue ->
+            override var value: String by Delegates.observable("value") { _, _, newValue ->
                 observer.invoke(newValue)
             }
 

@@ -20,9 +20,14 @@ fun <T> Observable<T>.toFlow(): Flow<T> {
                 // TODO: https://github.com/SunnyDayDev/arch-mvi/issues/13
                 //  implement better suspending in non coroutine context
                 while (result.isFailure && !result.isClosed) {
+                    println(">>>> try: $result")
                     Thread.sleep(1)
+                    println(">>>> try after sleep")
                     result = trySendBlocking(value)
                 }
+
+
+                println(">>>> ${result.isClosed}")
             }
 
             awaitClose { cancellable.cancel() }

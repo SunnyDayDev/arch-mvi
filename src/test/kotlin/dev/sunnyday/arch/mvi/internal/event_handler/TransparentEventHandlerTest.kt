@@ -3,11 +3,11 @@ package dev.sunnyday.arch.mvi.internal.event_handler
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import dev.sunnyday.arch.mvi.primitive.EventConsumer
 import dev.sunnyday.arch.mvi.test.collectWithScope
 import dev.sunnyday.arch.mvi.test.runUnconfinedTest
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TransparentEventHandlerTest {

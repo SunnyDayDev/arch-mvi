@@ -1,10 +1,10 @@
 package dev.sunnyday.arch.mvi.internal.sideeffect_handler
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import dev.sunnyday.arch.mvi.test.collectWithScope
 import dev.sunnyday.arch.mvi.test.runUnconfinedTest
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class EmptySideEffectHandlerTest {

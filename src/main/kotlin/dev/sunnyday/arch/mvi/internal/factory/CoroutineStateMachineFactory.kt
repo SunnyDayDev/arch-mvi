@@ -7,7 +7,7 @@ import dev.sunnyday.arch.mvi.internal.StateMachineImpl
 import dev.sunnyday.arch.mvi.internal.coroutine.MviCoroutineScope
 import dev.sunnyday.arch.mvi.internal.coroutine.isMviCoroutineScope
 
-object CoroutineMviStateMachineFactory : MviStateMachineFactory {
+internal class CoroutineStateMachineFactory : MviStateMachineFactory {
 
     override fun <State : Any, Event : Any, SideEffect : Any> createStateMachine(
         initialState: State,
@@ -22,15 +22,15 @@ object CoroutineMviStateMachineFactory : MviStateMachineFactory {
         )
     }
 
-    internal fun <State : Any, Event : Any, SideEffect : Any> createStateMachine(
-        coroutineScope: CoroutineScope,
+    fun <State : Any, Event : Any, SideEffect : Any> createStateMachine(
+        coroutineScope: CoroutineScope?,
         initialState: State,
         reducer: Reducer<State, Event, Update<State, SideEffect>>,
-        stateTransitionListener: StateTransitionListener<StateTransition<State, Event, SideEffect>>? = null,
+        stateTransitionListener: StateTransitionListener<StateTransition<State, Event, SideEffect>>?
     ): StateMachine<State, Event, SideEffect> {
-        val stateMachineCoroutineScope = coroutineScope.takeIf { it.isMviCoroutineScope }
+        val stateMachineCoroutineScope = coroutineScope?.takeIf { it.isMviCoroutineScope }
             ?: MviCoroutineScope(coroutineScope)
-        
+
         return StateMachineImpl(
             initialState = initialState,
             coroutineScope = stateMachineCoroutineScope,

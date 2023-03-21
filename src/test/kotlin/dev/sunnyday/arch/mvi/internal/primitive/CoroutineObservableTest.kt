@@ -11,8 +11,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertSame
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class CoroutineObservableTest {
@@ -67,7 +68,7 @@ class CoroutineObservableTest {
         val items = mutableListOf<String>()
         val cancellable = observable.observe(items::add, scope)
 
-        assertEquals(emptyList<String>(), items)
+        assertEquals(emptyList(), items)
         assertSame(Cancellable.empty(), cancellable)
     }
 }

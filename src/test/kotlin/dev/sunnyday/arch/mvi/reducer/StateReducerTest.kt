@@ -3,8 +3,8 @@ package dev.sunnyday.arch.mvi.reducer
 import dev.sunnyday.arch.mvi.Update
 import dev.sunnyday.arch.mvi.test.Event
 import dev.sunnyday.arch.mvi.test.State
-import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
 
 class StateReducerTest {
 

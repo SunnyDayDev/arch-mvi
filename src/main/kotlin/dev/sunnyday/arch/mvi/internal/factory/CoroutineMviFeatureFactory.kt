@@ -22,11 +22,12 @@ internal class CoroutineMviFeatureFactory : MviFeatureFactory {
     ): MviFeature<State, InputEvent> {
         val featureCoroutineScope = MviCoroutineScope()
 
-        val stateMachineFactoryScope = CoroutineStateMachineInstanceFactoryScope<State, Event, SideEffect>(
-            stateMachineFactory = MviKit.stateMachineFactory,
-            coroutineScope = featureCoroutineScope,
-            initialState = initialState,
-        )
+        val stateMachineFactoryScope: MviStateMachineInstanceFactory.FactoryScope<State, Event, SideEffect> =
+            CoroutineStateMachineInstanceFactoryScope(
+                stateMachineFactory = MviKit.stateMachineFactory,
+                coroutineScope = featureCoroutineScope,
+                initialState = initialState,
+            )
 
         val stateMachine = stateMachineFactory.run { stateMachineFactoryScope.createStateMachine() }
 

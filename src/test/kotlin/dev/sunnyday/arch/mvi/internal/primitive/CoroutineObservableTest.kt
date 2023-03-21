@@ -1,17 +1,22 @@
 package dev.sunnyday.arch.mvi.internal.primitive
 
+import dev.sunnyday.arch.mvi.coroutines.toFlow
+import dev.sunnyday.arch.mvi.internal.coroutine.MviCoroutineScope
 import dev.sunnyday.arch.mvi.primitive.Cancellable
+import dev.sunnyday.arch.mvi.primitive.Observable
+import dev.sunnyday.arch.mvi.test.collectWithScope
 import dev.sunnyday.arch.mvi.test.runUnconfinedTest
-import io.mockk.every
-import io.mockk.mockk
+import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 
@@ -70,5 +75,20 @@ class CoroutineObservableTest {
 
         assertEquals(emptyList(), items)
         assertSame(Cancellable.empty(), cancellable)
+    }
+
+    @Test
+    fun `observe non coroutine observable`() = runTest {
+        mockkStatic(::MviCoroutineScope) {
+            every { MviCoroutineScope(any()) } returns this
+
+            val items = mutableListOf<Int>()
+            val observable = CoroutineObservable(flowOf(1, 2))
+
+            observable.observe(items::add)
+            runCurrent()
+
+            assertEquals(listOf(1, 2), items)
+        }
     }
 }

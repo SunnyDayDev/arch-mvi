@@ -5,7 +5,7 @@ package dev.sunnyday.arch.mvi.coroutines
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 
-internal fun <T> Flow<T>.takeUntil(signalFlow: Flow<*>): Flow<T> {
+internal fun <T> Flow<T>.takeUntil(signalFlow: Flow<Any?>): Flow<T> {
     val original = this
 
     return signalFlow

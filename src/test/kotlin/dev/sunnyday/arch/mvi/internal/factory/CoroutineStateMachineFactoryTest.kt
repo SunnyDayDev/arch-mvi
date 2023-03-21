@@ -4,6 +4,7 @@ import dev.sunnyday.arch.mvi.Reducer
 import dev.sunnyday.arch.mvi.StateTransition
 import dev.sunnyday.arch.mvi.StateTransitionListener
 import dev.sunnyday.arch.mvi.Update
+import dev.sunnyday.arch.mvi.factory.MviStateMachineFactory
 import dev.sunnyday.arch.mvi.internal.StateMachineImpl
 import dev.sunnyday.arch.mvi.internal.coroutine.MviCoroutineMarker
 import dev.sunnyday.arch.mvi.internal.coroutine.MviCoroutineScope
@@ -92,7 +93,8 @@ class CoroutineStateMachineFactoryTest {
             EqMatcher(transitionListener, true),
         )
 
-        val obj = CoroutineStateMachineFactory().createStateMachine(
+        val factory: MviStateMachineFactory = CoroutineStateMachineFactory()
+        val obj = factory.createStateMachine(
             initialState = state,
             reducer = reducer,
             stateTransitionListener = transitionListener,

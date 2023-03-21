@@ -10,10 +10,9 @@ import dev.sunnyday.arch.mvi.test.runUnconfinedTest
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.take
-import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
 import kotlin.properties.Delegates
 import kotlin.test.assertEquals
@@ -33,19 +32,31 @@ class FlowMappingsKtTest {
     }
 
     @Test
-    fun `toFlow on other Observable properly maps to flow`() = runUnconfinedTest {
+    fun `toFlow on other Observable properly maps to flow`() = runTest {
         val cancellable = mockk<Cancellable>(relaxed = true)
+        val emittedValues = mutableListOf<String>()
         val observable = Observable { observer ->
             observer.invoke("one")
+            emittedValues.add("one")
             observer.invoke("two")
+            emittedValues.add("two")
             cancellable
         }
 
         val flowItems = observable.toFlow()
+            .flowOn(Dispatchers.Default)
+            .buffer(0)
+            .onEach { if (it == "one") delay(100) }
             .take(2)
             .collectWithScope()
 
-        assertEquals(flowItems, listOf("one", "two"))
+        advanceTimeBy(50)
+        assertEquals(listOf("one"), emittedValues)
+
+        advanceTimeBy(100)
+        assertEquals(listOf("one", "two"), emittedValues)
+
+        assertEquals(listOf("one", "two"), flowItems)
         verify { cancellable.cancel() }
     }
 

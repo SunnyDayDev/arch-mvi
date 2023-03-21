@@ -21,23 +21,25 @@ internal class CoroutineMviFeatureStarterFactory : MviFeatureStarterFactory {
             val initialState = initialStateProvider.provideInitialState()
             val featureCoroutineScope = MviCoroutineScope()
 
-            val stateMachineFactoryScope = CoroutineStateMachineInstanceFactoryScope<State, Event, SideEffect>(
-                stateMachineFactory = MviKit.stateMachineFactory,
-                coroutineScope = featureCoroutineScope,
-                initialState = initialState,
-            )
+            val stateMachineFactoryScope: MviStateMachineInstanceFactory.FactoryScope<State, Event, SideEffect> =
+                CoroutineStateMachineInstanceFactoryScope(
+                    stateMachineFactory = MviKit.stateMachineFactory,
+                    coroutineScope = featureCoroutineScope,
+                    initialState = initialState,
+                )
 
             val stateMachine = stateMachineInstanceFactory.run { stateMachineFactoryScope.createStateMachine() }
 
-            val featureFactoryScope = CoroutineMviFeatureInstanceFactoryScope(
-                featureFactory = MviKit.featureFactory,
-                featureCoroutineScope = featureCoroutineScope,
-                initialState = initialState,
-                initialEventsProvider = initialEventsProvider,
-                initialInputEventsProvider = initialInputEventsProvider,
-                initialSideEffectsProvider = initialSideEffectsProvider,
-                stateMachine = stateMachine,
-            )
+            val featureFactoryScope: MviFeatureInstanceFactory.FactoryScope<State, InputEvent, Event, SideEffect> =
+                CoroutineMviFeatureInstanceFactoryScope(
+                    featureFactory = MviKit.featureFactory,
+                    featureCoroutineScope = featureCoroutineScope,
+                    initialState = initialState,
+                    initialEventsProvider = initialEventsProvider,
+                    initialInputEventsProvider = initialInputEventsProvider,
+                    initialSideEffectsProvider = initialSideEffectsProvider,
+                    stateMachine = stateMachine,
+                )
 
             featureInstanceFactory.run { featureFactoryScope.createFeature() }
         }

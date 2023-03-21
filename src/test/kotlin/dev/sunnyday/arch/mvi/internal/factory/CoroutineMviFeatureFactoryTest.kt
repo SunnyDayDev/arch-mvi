@@ -1,6 +1,7 @@
 package dev.sunnyday.arch.mvi.internal.factory
 
 import dev.sunnyday.arch.mvi.*
+import dev.sunnyday.arch.mvi.factory.MviFeatureFactory
 import dev.sunnyday.arch.mvi.factory.MviKit
 import dev.sunnyday.arch.mvi.factory.MviStateMachineInstanceFactory
 import dev.sunnyday.arch.mvi.internal.MviFeatureImpl
@@ -56,8 +57,8 @@ class CoroutineMviFeatureFactoryTest {
             expectedStateMachineFactoryScope().createStateMachine(any(), any())
         } returns stateMachine
 
-        val feature = CoroutineMviFeatureFactory()
-            .createFeature(
+        val factory: MviFeatureFactory = CoroutineMviFeatureFactory()
+        val feature = factory.createFeature(
                 initialState = initialState,
                 eventHandler = eventHandler,
                 sideEffectHandler = sideEffectHandler,

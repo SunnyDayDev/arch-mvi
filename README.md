@@ -6,5 +6,24 @@
 # arch-mvi
 Kotlin MVI framework
 
+# Integration
+```kotlin
+// build.gradle.kts
+
+implementation("dev.sunnyday.arch-mvi:mvi-core:$version")
+implementation("dev.sunnyday.arch-mvi:mvi-kit-coroutine:$version")
+```
+
+```kotlin
+// Somewhere in the code
+
+import dev.sunnyday.arch.mvi.coroutine.setupFactories
+import dev.sunnyday.arch.mvi.MviKit
+
+fun initMvi() {
+  MviKit.setupFactories()
+}
+```
+
 # Status
 In progress. README will be updated later.

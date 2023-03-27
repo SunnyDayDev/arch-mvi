@@ -2,6 +2,7 @@
 # Versions
 #-----------------
 [versions]
+jdkVersion = "8"
 kotlin = "1.8.10"
 coroutines = "1.6.4"
 mockk = "1.13.3"

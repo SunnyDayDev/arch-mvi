@@ -6,6 +6,9 @@
 # arch-mvi
 Kotlin MVI framework
 
+# Status
+In progress. README is lean and will be updated later.
+
 # Integration
 ```kotlin
 // build.gradle.kts
@@ -25,5 +28,52 @@ fun initMvi() {
 }
 ```
 
-# Status
-In progress. README will be updated later.
+# Usage
+```kotlin
+fun startFeature(featureCoroutineScope: CoroutineScope): MviFeature<State, InputEvent> {
+    // null can be skipped, just showed that they are 
+    val starter = MviKit.withParentCoroutine(featureCoroutineScope)
+        .createFeatureStarter<State, InputEvent, Event, SideEffect>(
+            initialStateProvider = { State("initial") },
+            initialEventsProvider = null,
+            initialInputEventsProvider = null,
+            initialSideEffectsProvider = null,
+            stateMachineInstanceFactory = {
+                createStateMachine(
+                    reducer = FeatureReducer(),
+                    stateTransitionListener = null,
+                )
+            },
+            featureInstanceFactory = {
+                createFeature(
+                    eventHandler = FeatureInputEventHandler(),
+                    sideEffectHandler = FeatureSideEffectHandler(),
+                    onReadyCallback = null,
+                )
+            }
+        )
+
+    return starter.start()
+}
+
+// Or minimal, even without EventHandler
+fun startFeature(): MviFeature<State, Event> {
+    // null can be skipped, just showed that they are 
+    val starter = MviKit.createFeatureStarter<State, Event, Event, SideEffect>(
+        initialStateProvider = { State("initial") },
+        stateMachineInstanceFactory = {
+            createStateMachine(
+                reducer = FeatureReducer(),
+            )
+        },
+        featureInstanceFactory = {
+            createFeature(
+                sideEffectHandler = FeatureSideEffectHandler(),
+            )
+        }
+    )
+
+    return starter.start()
+}
+```
+A state machine or feature can be instantiated independently using own MviKit's factory method.

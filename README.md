@@ -58,7 +58,6 @@ fun startFeature(featureCoroutineScope: CoroutineScope): MviFeature<State, Input
 
 // Or minimal, even without EventHandler
 fun startFeature(): MviFeature<State, Event> {
-    // null can be skipped, just showed that they are 
     val starter = MviKit.createFeatureStarter<State, Event, Event, SideEffect>(
         initialStateProvider = { State("initial") },
         stateMachineInstanceFactory = {

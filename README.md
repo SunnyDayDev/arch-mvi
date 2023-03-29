@@ -38,13 +38,13 @@ fun startFeature(featureCoroutineScope: CoroutineScope): MviFeature<State, Input
             initialEventsProvider = null,
             initialInputEventsProvider = null,
             initialSideEffectsProvider = null,
-            stateMachineInstanceFactory = {
+            stateMachineInstanceFactory = { // this: StateMachineInstanceFactory.FactoryScope -> // with createStateMachine method
                 createStateMachine(
                     reducer = FeatureReducer(),
                     stateTransitionListener = null,
                 )
             },
-            featureInstanceFactory = {
+            featureInstanceFactory = { // this: FeatureInstanceFactory.FactoryScope -> // with createFeature method
                 createFeature(
                     eventHandler = FeatureInputEventHandler(),
                     sideEffectHandler = FeatureSideEffectHandler(),

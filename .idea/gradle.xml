@@ -12,6 +12,7 @@
             <option value="$PROJECT_DIR$/mvi-core" />
             <option value="$PROJECT_DIR$/mvi-core-primitives" />
             <option value="$PROJECT_DIR$/mvi-kit-coroutine" />
+            <option value="$PROJECT_DIR$/mvi-sideeffect-particle" />
             <option value="$PROJECT_DIR$/mvi-test-common" />
             <option value="$PROJECT_DIR$/mvi-test-util" />
           </set>

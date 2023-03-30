@@ -5,5 +5,7 @@ include("mvi-core-primitives")
 include("mvi-core")
 include("mvi-kit-coroutine")
 
+include("mvi-sideeffect-particle")
+
 include("mvi-test-util")
 include("mvi-test-common")

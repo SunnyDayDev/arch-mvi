@@ -74,5 +74,7 @@ interface ParticleExecutionRuleConfig<SideEffect : Any> {
 inline fun <T : Any> executionRule(
     crossinline configure: ParticleExecutionRuleConfig<out T>.() -> Unit,
 ): ParticleExecutionRule<T> {
-    return ParticleExecutionRule { configure() }
+    return ParticleExecutionRule {
+        configure.invoke(this)
+    }
 }

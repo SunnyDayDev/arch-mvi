@@ -5,6 +5,7 @@ import dev.sunnyday.arch.mvi.side_effect.solo.ExecutingSideEffect
 import dev.sunnyday.arch.mvi.side_effect.solo.SoloSideEffect
 import dev.sunnyday.arch.mvi.side_effect.solo.SoloSideEffectHandler
 import dev.sunnyday.arch.mvi.side_effect.solo.test.TestFilterExecutingSideEffect
+import kotlinx.coroutines.flow.Flow
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -116,7 +117,7 @@ class SideEffectsWithTypeInstanceFilterTest {
     }
 
     class SoloSuper : SoloSideEffect<Any, Super, Any> {
-        override fun execute(dependency: Any): ObservableEvent<Any> {
+        override fun execute(dependency: Any): Flow<Any> {
             TODO("Not yet implemented")
         }
     }

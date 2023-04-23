@@ -7,6 +7,8 @@ import dev.sunnyday.arch.mvi.test.SideEffect
 import io.mockk.confirmVerified
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import org.junit.jupiter.api.Test
 import kotlin.test.assertSame
 
@@ -25,7 +27,7 @@ class SoloExecutionRuleTest {
     @Test
     fun `default execution rule is Independent`() {
         val sideEffectHandler = object : SoloSideEffect<Any, Any, Any> {
-            override fun execute(dependency: Any): ObservableEvent<Any> = ObservableEvent.empty()
+            override fun execute(dependency: Any): Flow<Any> = emptyFlow()
         }
 
         assertSame(SoloExecutionRule.independent(), sideEffectHandler.executionRule)

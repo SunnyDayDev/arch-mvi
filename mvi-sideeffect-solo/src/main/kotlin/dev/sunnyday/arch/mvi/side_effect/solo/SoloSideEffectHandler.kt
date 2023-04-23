@@ -49,7 +49,6 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         }
 
         return sideEffect.execute(dependencies)
-            .toFlow()
             .onStart {
                 executingSideEffect.executionState = ExecutingSideEffect.ExecutionState.EXECUTING
             }
@@ -58,6 +57,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
                     executingSideEffects - executingSideEffect
                 }
                 executingSideEffect.executionState = ExecutingSideEffect.ExecutionState.COMPLETED
+                executingSideEffect.isActiveState.emit(false)
             }
     }
 
@@ -125,7 +125,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
     private inner class ExecutingSideEffectImpl(
         override val id: ExecutingSideEffect.Id,
         override val sideEffect: SideEffect,
-        private val isActiveState: MutableStateFlow<Boolean>,
+        val isActiveState: MutableStateFlow<Boolean>,
     ) : ExecutingSideEffect<SideEffect> {
 
         override var executionState: ExecutingSideEffect.ExecutionState = ExecutingSideEffect.ExecutionState.ENQUEUED
@@ -200,7 +200,14 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             failOnError: Boolean,
             requireSuccess: Boolean
         ) {
-            TODO("Not yet implemented")
+            actions.add {
+                executingSideEffectsStore.get().filter(filter::accept).forEach { sideEffect ->
+                    (sideEffect as SoloSideEffectHandler<*, *, *>.ExecutingSideEffectImpl)
+                        .isActiveState
+                        .filterNot { it }
+                        .firstOrNull()
+                }
+            }
         }
     }
 

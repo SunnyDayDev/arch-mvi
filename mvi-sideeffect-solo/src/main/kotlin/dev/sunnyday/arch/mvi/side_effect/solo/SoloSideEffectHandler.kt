@@ -178,7 +178,8 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         var isSkipped = false
 
         override fun skipIfAlreadyExecuting(filter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
-            isSkipped = true
+            if (isSkipped) return
+            isSkipped = executingSideEffectsStore.get().any(filter::accept)
         }
 
         override fun delay(duration: Duration) {

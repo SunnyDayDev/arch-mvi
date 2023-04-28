@@ -211,6 +211,53 @@ class SoloSideEffectHandlerTest {
         coVerify { dependentFlow.collect(any()) }
     }
 
+    @Test
+    fun `on execute, skip if already executing specified sideeffect`() = runUnconfinedTest {
+        val signalSideEffectCompletionChannel = Channel<Unit>()
+        val targetSideEffect = object : TestSideEffect {
+
+            override fun execute(dependency: TestDependencies): Flow<Event> =
+                flow { signalSideEffectCompletionChannel.receive() }
+        }
+
+        val dependentFlow = spyk(emptyFlow<Event>())
+        val dependendSideEffect = object : TestSideEffect {
+
+            override val executionRule = executionRule<TestSideEffect> {
+                onExecute { skipIfAlreadyExecuting(InstanceFilter.Filter { it.sideEffect === targetSideEffect }) }
+            }
+
+            override fun execute(dependency: TestDependencies): Flow<Event> = dependentFlow
+        }
+
+        val handler = createSoloSideEffectHandler()
+
+        handler.onSideEffect(targetSideEffect)
+        handler.onSideEffect(dependendSideEffect)
+        signalSideEffectCompletionChannel.send(Unit)
+
+        confirmVerified(dependentFlow)
+    }
+
+    @Test
+    fun `on execute, don't skip if already executing sideeffect isn't present`() = runUnconfinedTest {
+        val dependentFlow = spyk(emptyFlow<Event>())
+        val dependendSideEffect = object : TestSideEffect {
+
+            override val executionRule = executionRule<TestSideEffect> {
+                onExecute { skipIfAlreadyExecuting(InstanceFilter.Filter { false }) }
+            }
+
+            override fun execute(dependency: TestDependencies): Flow<Event> = dependentFlow
+        }
+
+        val handler = createSoloSideEffectHandler()
+
+        handler.onSideEffect(dependendSideEffect)
+
+        coVerify { dependentFlow.collect(any()) }
+    }
+
     private suspend fun TestScope.createSoloSideEffectHandler(): SoloSideEffectHandler<TestDependencies, TestSideEffect, Event> {
         val currentCoroutineContext = currentCoroutineContext()
 

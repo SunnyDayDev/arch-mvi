@@ -1,7 +1,6 @@
 package dev.sunnyday.arch.mvi.side_effect.solo
 
 import dev.sunnyday.arch.mvi.SideEffectHandler
-import dev.sunnyday.arch.mvi.coroutine.ktx.toFlow
 import dev.sunnyday.arch.mvi.primitive.ObservableEvent
 import dev.sunnyday.arch.mvi.coroutine.ktx.toObservable
 import dev.sunnyday.arch.mvi.side_effect.solo.SoloExecutionRuleConfig.*
@@ -42,8 +41,12 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
 
         val executingSideEffect = addExecutingSideEffect(sideEffect, rule, isActiveState)
 
-        proceedEnqueueState(executingSideEffect, rule)
+        proceedRule(executingSideEffect, rule.onEnqueueRule)
+        if (executingSideEffect.executionState == ExecutingSideEffect.ExecutionState.COMPLETED) {
+            return emptyFlow()
+        }
 
+        proceedRule(executingSideEffect, rule.onExecuteRule)
         if (executingSideEffect.executionState == ExecutingSideEffect.ExecutionState.COMPLETED) {
             return emptyFlow()
         }
@@ -80,12 +83,12 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         return executingSideEffect
     }
 
-    private suspend fun proceedEnqueueState(
+    private suspend fun proceedRule(
         sideEffect: ExecutingSideEffectImpl,
-        rule: SideEffectRule,
+        rule: (OnEnqueueRule.() -> Unit)?,
     ) {
         val onEnqueueRule = OnEnqueueRule(sideEffect)
-        rule.executeOnEnqueue?.let { execute -> onEnqueueRule.execute() }
+        rule?.let { execute -> onEnqueueRule.execute() }
 
         onEnqueueRule.actions.forEach { action ->
             action.invoke()
@@ -141,10 +144,9 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
 
         var sideEffectId: ExecutingSideEffect.Id = ExecutingSideEffect.Id.Unique()
 
-        var executeOnEnqueue: (OnEnqueueBuilder<SideEffect>.() -> Unit)? = null
-        var executeOnExecuteRule: (OnExecuteBuilder<SideEffect>.() -> Unit)? = null
-        var executeOnCancelRule: (OnCancelBuilder<SideEffect>.(trigger: ExecutingSideEffect<SideEffect>) -> Unit)? =
-            null
+        var onEnqueueRule: (OnEnqueueBuilder<SideEffect>.() -> Unit)? = null
+        var onExecuteRule: (OnExecuteBuilder<SideEffect>.() -> Unit)? = null
+        var onCancelRule: (OnCancelBuilder<SideEffect>.(trigger: ExecutingSideEffect<SideEffect>) -> Unit)? = null
 
         override fun setId(id: ExecutingSideEffect.Id): SoloExecutionRuleConfig<SideEffect> = apply {
             sideEffectId = id
@@ -153,25 +155,25 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         override fun onEnqueue(
             config: OnEnqueueBuilder<SideEffect>.() -> Unit,
         ) = apply {
-            executeOnEnqueue = config
+            onEnqueueRule = config
         }
 
         override fun onExecute(
             config: OnExecuteBuilder<SideEffect>.() -> Unit,
         ): SoloExecutionRuleConfig<SideEffect> = apply {
-            executeOnExecuteRule = config
+            onExecuteRule = config
         }
 
         override fun onCancel(
             config: OnCancelBuilder<SideEffect>.(trigger: ExecutingSideEffect<SideEffect>) -> Unit,
         ): SoloExecutionRuleConfig<SideEffect> = apply {
-            executeOnCancelRule = config
+            onCancelRule = config
         }
     }
 
     private inner class OnEnqueueRule(
         sideEffect: ExecutingSideEffect<SideEffect>,
-    ) : BuilderRule(sideEffect), OnEnqueueBuilder<SideEffect> {
+    ) : BuilderRule(sideEffect), OnEnqueueBuilder<SideEffect>, OnExecuteBuilder<SideEffect> {
 
         val actions = mutableListOf<suspend () -> Unit>()
 
@@ -188,14 +190,6 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             }
         }
 
-        override fun sendSignal(signal: Any) {
-            TODO("Not yet implemented")
-        }
-
-        override fun cancelOther(sideEffectsFilter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
-            TODO("Not yet implemented")
-        }
-
         override fun awaitComplete(
             filter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>,
             failOnError: Boolean,
@@ -209,6 +203,25 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
                         .firstOrNull()
                 }
             }
+        }
+
+        override fun registerCancelOnSignal(signalFilter: InstanceFilter<Any, *>) {
+            TODO("Not yet implemented")
+        }
+
+        override fun <S : SideEffect> registerListener(
+            filter: InstanceFilter<ExecutingSideEffect<SideEffect>, ExecutingSideEffect<S>>,
+            listener: (ExecutingSideEffect<S>) -> Unit
+        ) {
+            TODO("Not yet implemented")
+        }
+
+        override fun sendSignal(signal: Any) {
+            TODO("Not yet implemented")
+        }
+
+        override fun cancelOther(sideEffectsFilter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
+            TODO("Not yet implemented")
         }
     }
 

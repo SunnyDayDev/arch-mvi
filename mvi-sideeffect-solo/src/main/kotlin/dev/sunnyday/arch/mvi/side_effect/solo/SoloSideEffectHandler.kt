@@ -62,6 +62,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
                 executingSideEffect.executionState = ExecutingSideEffect.ExecutionState.COMPLETED
                 executingSideEffect.isActiveState.emit(false)
             }
+            .takeUntil(executingSideEffect.isActiveState.filterNot { isActive -> isActive })
     }
 
     private fun addExecutingSideEffect(
@@ -125,6 +126,16 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         }
     }
 
+    private fun <T> Flow<T>.takeUntil(signalFlow: Flow<Any?>): Flow<T> {
+        val original = this
+
+        return signalFlow
+            .take(1)
+            .map { emptyFlow<T>() }
+            .onStart { emit(original) }
+            .flatMapLatest { flow -> flow }
+    }
+
     private inner class ExecutingSideEffectImpl(
         override val id: ExecutingSideEffect.Id,
         override val sideEffect: SideEffect,
@@ -135,8 +146,12 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
 
         override fun cancel() {
             coroutineScope.launch {
-                isActiveState.emit(false)
+                cancelInternal()
             }
+        }
+
+        suspend fun cancelInternal() {
+            isActiveState.emit(false)
         }
     }
 
@@ -209,18 +224,23 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             TODO("Not yet implemented")
         }
 
-        override fun <S : SideEffect> registerListener(
-            filter: InstanceFilter<ExecutingSideEffect<SideEffect>, ExecutingSideEffect<S>>,
-            listener: (ExecutingSideEffect<S>) -> Unit
-        ) {
-            TODO("Not yet implemented")
-        }
-
         override fun sendSignal(signal: Any) {
             TODO("Not yet implemented")
         }
 
         override fun cancelOther(sideEffectsFilter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
+            actions.add {
+                executingSideEffectsStore.get().filter(sideEffectsFilter::accept).forEach { sideEffect ->
+                    (sideEffect as SoloSideEffectHandler<*, *, *>.ExecutingSideEffectImpl)
+                        .cancelInternal()
+                }
+            }
+        }
+
+        override fun <S : SideEffect> registerListener(
+            filter: InstanceFilter<ExecutingSideEffect<SideEffect>, ExecutingSideEffect<S>>,
+            listener: (ExecutingSideEffect<S>) -> Unit
+        ) {
             TODO("Not yet implemented")
         }
     }

@@ -12,6 +12,8 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.MethodSource
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -46,7 +48,7 @@ class SoloSideEffectHandlerTest {
         val handler = createSoloSideEffectHandler()
         advanceUntilIdle()
 
-        val sideEffect: TestSideEffect = object : TestSideEffect {
+        val sideEffect: TestSideEffect = object : TestSideEffect() {
             override val executionRule = executionRule<TestSideEffect> {
                 onEnqueue {
                     delay(TEST_DELAY.milliseconds)
@@ -83,7 +85,7 @@ class SoloSideEffectHandlerTest {
     @Test
     fun `rule id is sideEffect id`() = runUnconfinedTest {
         val expectedId = ExecutingSideEffect.Id.Custom("custom")
-        val sideEffect: TestSideEffect = object : TestSideEffect {
+        val sideEffect: TestSideEffect = object : TestSideEffect() {
             override val executionRule = executionRule<TestSideEffect> {
                 setId(expectedId)
             }
@@ -106,7 +108,7 @@ class SoloSideEffectHandlerTest {
         val delayDuration = 100.milliseconds
         val flow = spyk(emptyFlow<Event>())
 
-        val sideEffect = object : TestSideEffect {
+        val sideEffect = object : TestSideEffect() {
             override val executionRule = executionRule<TestSideEffect> {
                 onEnqueue {
                     delay(delayDuration)
@@ -132,49 +134,39 @@ class SoloSideEffectHandlerTest {
 
     @Test
     fun `await complete on enqueue delays execution until specified sideeffects complete`() = runUnconfinedTest {
-        val root = object : TestSideEffect {
+        val root = TestSideEffect()
 
-            private val completeChannel = Channel<Unit>()
-
-            override fun execute(dependency: TestDependencies): Flow<Event> = flow { completeChannel.receive() }
-
-            suspend fun complete() = completeChannel.send(Unit)
-        }
-
-        val dependentFlow = spyk(emptyFlow<Event>())
-        val dependent = object : TestSideEffect {
+        val dependent = object : TestSideEffect() {
 
             override val executionRule = executionRule<TestSideEffect> {
                 onEnqueue {
                     awaitComplete(InstanceFilter.Filter { it.sideEffect === root })
                 }
             }
-
-            override fun execute(dependency: TestDependencies): Flow<Event> = dependentFlow
         }
 
         val handler = createSoloSideEffectHandler()
         handler.onSideEffect(root)
         handler.onSideEffect(dependent)
 
-        confirmVerified(dependentFlow)
+        assertEquals(TestSideEffect.State.UNEXECUTED, dependent.state)
 
         root.complete()
 
-        coVerify { dependentFlow.collect(any()) }
+        assertEquals(TestSideEffect.State.EXECUTING, dependent.state)
     }
 
     @Test
     fun `on enqueue, skip if already executing specified sideeffect`() = runUnconfinedTest {
         val signalSideEffectCompletionChannel = Channel<Unit>()
-        val targetSideEffect = object : TestSideEffect {
+        val targetSideEffect = object : TestSideEffect() {
 
             override fun execute(dependency: TestDependencies): Flow<Event> =
                 flow { signalSideEffectCompletionChannel.receive() }
         }
 
         val dependentFlow = spyk(emptyFlow<Event>())
-        val dependendSideEffect = object : TestSideEffect {
+        val dependendSideEffect = object : TestSideEffect() {
 
             override val executionRule = executionRule<TestSideEffect> {
                 onEnqueue { skipIfAlreadyExecuting(InstanceFilter.Filter { it.sideEffect === targetSideEffect }) }
@@ -195,7 +187,7 @@ class SoloSideEffectHandlerTest {
     @Test
     fun `on enqueue, don't skip if already executing sideeffect isn't present`() = runUnconfinedTest {
         val dependentFlow = spyk(emptyFlow<Event>())
-        val dependendSideEffect = object : TestSideEffect {
+        val dependendSideEffect = object : TestSideEffect() {
 
             override val executionRule = executionRule<TestSideEffect> {
                 onEnqueue { skipIfAlreadyExecuting(InstanceFilter.Filter { false }) }
@@ -214,14 +206,14 @@ class SoloSideEffectHandlerTest {
     @Test
     fun `on execute, skip if already executing specified sideeffect`() = runUnconfinedTest {
         val signalSideEffectCompletionChannel = Channel<Unit>()
-        val targetSideEffect = object : TestSideEffect {
+        val targetSideEffect = object : TestSideEffect() {
 
             override fun execute(dependency: TestDependencies): Flow<Event> =
                 flow { signalSideEffectCompletionChannel.receive() }
         }
 
         val dependentFlow = spyk(emptyFlow<Event>())
-        val dependendSideEffect = object : TestSideEffect {
+        val dependendSideEffect = object : TestSideEffect() {
 
             override val executionRule = executionRule<TestSideEffect> {
                 onExecute { skipIfAlreadyExecuting(InstanceFilter.Filter { it.sideEffect === targetSideEffect }) }
@@ -242,7 +234,7 @@ class SoloSideEffectHandlerTest {
     @Test
     fun `on execute, don't skip if already executing sideeffect isn't present`() = runUnconfinedTest {
         val dependentFlow = spyk(emptyFlow<Event>())
-        val dependendSideEffect = object : TestSideEffect {
+        val dependendSideEffect = object : TestSideEffect() {
 
             override val executionRule = executionRule<TestSideEffect> {
                 onExecute { skipIfAlreadyExecuting(InstanceFilter.Filter { false }) }
@@ -258,6 +250,27 @@ class SoloSideEffectHandlerTest {
         coVerify { dependentFlow.collect(any()) }
     }
 
+    @ParameterizedTest
+    @MethodSource("provideCancelOtherRules")
+    fun `cancelOther(_) cancels other side effect`(targetSideEffectRuleFactory: TargetSideEffectRuleFactory) =
+        runUnconfinedTest {
+            val targetSideEffect = TestSideEffect()
+
+            val sideEffect = object : TestSideEffect() {
+                override val executionRule = targetSideEffectRuleFactory.createRuleForTarget(targetSideEffect)
+            }
+
+            val handler = createSoloSideEffectHandler()
+
+            handler.onSideEffect(targetSideEffect)
+
+            assertEquals(TestSideEffect.State.EXECUTING, targetSideEffect.state)
+
+            handler.onSideEffect(sideEffect)
+
+            assertEquals(TestSideEffect.State.CANCELLED, targetSideEffect.state)
+        }
+
     private suspend fun TestScope.createSoloSideEffectHandler(): SoloSideEffectHandler<TestDependencies, TestSideEffect, Event> {
         val currentCoroutineContext = currentCoroutineContext()
 
@@ -270,13 +283,72 @@ class SoloSideEffectHandlerTest {
 
     interface TestDependencies
 
-    interface TestSideEffect : SoloSideEffect<TestDependencies, TestSideEffect, Event> {
+    open class TestSideEffect : SoloSideEffect<TestDependencies, TestSideEffect, Event> {
 
-        override fun execute(dependency: TestDependencies): Flow<Event> = emptyFlow()
+        var state: State = State.UNEXECUTED
+            private set
+
+        private val eventChannel = Channel<Event>()
+
+        suspend fun send(event: Event) {
+            eventChannel.send(event)
+        }
+
+        fun complete() {
+            eventChannel.close()
+        }
+
+        override fun execute(dependency: TestDependencies): Flow<Event> = flow {
+            for (event in eventChannel) {
+                emit(event)
+            }
+        }
+            .onStart { state = State.EXECUTING }
+            .onCompletion { state = if (it != null) State.CANCELLED else State.COMPLETED }
+
+        enum class State {
+            UNEXECUTED,
+            EXECUTING,
+            COMPLETED,
+            CANCELLED,
+        }
+    }
+
+    fun interface TargetSideEffectRuleFactory {
+
+        fun createRuleForTarget(sideEffect: TestSideEffect): SoloExecutionRule<TestSideEffect>
+    }
+
+    class NamedTargetSideEffectRuleFactory(
+        private val name: String,
+        ruleFactory: TargetSideEffectRuleFactory,
+    ) : TargetSideEffectRuleFactory by ruleFactory {
+
+        override fun toString(): String = name
     }
 
     private companion object {
 
         const val TEST_DELAY = 100L
+
+        @JvmStatic
+        fun provideCancelOtherRules(): List<TargetSideEffectRuleFactory> {
+            return listOf(
+                NamedTargetSideEffectRuleFactory("onEnqueue") { target ->
+                    executionRule {
+                        onEnqueue {
+                            cancelOther(InstanceFilter.Filter { it.sideEffect === target })
+                        }
+                    }
+                },
+                NamedTargetSideEffectRuleFactory("onExecute") { target ->
+                    executionRule {
+                        onExecute {
+                            cancelOther(InstanceFilter.Filter { it.sideEffect === target })
+                        }
+                    }
+                }
+            )
+        }
     }
 }

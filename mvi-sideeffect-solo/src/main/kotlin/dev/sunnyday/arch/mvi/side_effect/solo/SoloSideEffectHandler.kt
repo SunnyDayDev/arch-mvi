@@ -22,6 +22,10 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
 
     private val executingSideEffectsStore: AtomicStore<Array<ExecutingSideEffect<SideEffect>>> = createSideEffectsStore()
 
+    private val outputEventsFlow = sideEffectsFlow
+        .flatMapMerge(transform = ::flatMapSideEffect)
+        //.shareIn(coroutineScope, SharingStarted.WhileSubscribed(), 0)
+
     override fun onSideEffect(sideEffect: SideEffect) {
         coroutineScope.launch {
             sideEffectsFlow.emit(sideEffect)
@@ -29,8 +33,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
     }
 
     override val outputEvents: ObservableEvent<Event>
-        get() = sideEffectsFlow
-            .flatMapMerge(transform = ::flatMapSideEffect)
+        get() = outputEventsFlow
             .toObservable(coroutineScope)
 
     private suspend fun flatMapSideEffect(sideEffect: SideEffect): Flow<Event> {
@@ -51,12 +54,14 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             return emptyFlow()
         }
 
+        println("sideEffect.execute ${Thread.currentThread().name}")
+
         return sideEffect.execute(dependencies)
             .onStart {
                 executingSideEffect.executionState = ExecutingSideEffect.ExecutionState.EXECUTING
             }
             .onCompletion {
-                transformExecutingSideEffects(sideEffect) { executingSideEffects ->
+                transformExecutingSideEffects { executingSideEffects ->
                     executingSideEffects - executingSideEffect
                 }
                 executingSideEffect.executionState = ExecutingSideEffect.ExecutionState.COMPLETED
@@ -76,10 +81,9 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             isActiveState = isActiveState,
         )
 
-        transformExecutingSideEffects(sideEffect) { executingSideEffects ->
+        transformExecutingSideEffects { executingSideEffects ->
             executingSideEffects + executingSideEffect
         }
-
 
         return executingSideEffect
     }
@@ -101,7 +105,6 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
     }
 
     private inline fun transformExecutingSideEffects(
-        tag: SideEffect,
         transform: (Array<ExecutingSideEffect<SideEffect>>) -> Array<ExecutingSideEffect<SideEffect>>
     ) {
         while (true) {

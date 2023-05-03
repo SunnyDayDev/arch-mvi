@@ -189,14 +189,34 @@ class SoloSideEffectHandlerTest {
         assertEquals(TestSideEffect.State.CANCELLED, targetSideEffect.state)
     }
 
-    private suspend fun TestScope.createSoloSideEffectHandler(): SoloSideEffectHandler<TestDependencies, TestSideEffect, Event> {
+    @Test
+    fun `side effect events is handler output events`() = runUnconfinedTest {
+        val handler = createSoloSideEffectHandler(collectOutputEvents = false)
+        val sideEffect = TestSideEffect()
+        val handlerEvents = handler.outputEvents.toFlow().collectWithScope()
+        val expectedEvent = Event("expected")
+
+        handler.onSideEffect(sideEffect)
+
+        sideEffect.send(expectedEvent)
+
+        assertEquals(listOf(expectedEvent), handlerEvents)
+    }
+
+    private suspend fun TestScope.createSoloSideEffectHandler(
+        collectOutputEvents: Boolean = true,
+    ): SoloSideEffectHandler<TestDependencies, TestSideEffect, Event> {
         val currentCoroutineContext = currentCoroutineContext()
 
         return SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>(
             dependencies = dependencies,
             coroutineScope = this,
             dispatcher = requireNotNull(currentCoroutineContext[CoroutineDispatcher]),
-        ).also { it.outputEvents.toFlow().collectWithScope() }
+        ).also { handler ->
+            if (collectOutputEvents) {
+                handler.outputEvents.toFlow().collectWithScope()
+            }
+        }
     }
 
     interface TestDependencies

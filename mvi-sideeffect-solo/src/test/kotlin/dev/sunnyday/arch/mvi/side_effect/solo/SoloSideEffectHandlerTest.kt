@@ -189,6 +189,26 @@ class SoloSideEffectHandlerTest {
         assertEquals(TestSideEffect.State.CANCELLED, targetSideEffect.state)
     }
 
+    @ParameterizedTest
+    @MethodSource("provideSendSignalRules")
+    fun `cancelOnSignal cancels side effect when signal received`(
+        sendSignalRuleFactory: SendSignalRuleFactory,
+    ) = runUnconfinedTest {
+        val signal = Any()
+        val signalSideEffect = TestSideEffect(sendSignalRuleFactory.createRule(signal))
+        val cancellableSideEffect = TestSideEffect(executionRule {
+            onExecute {
+                registerCancelOnSignal(InstanceFilter.Filter { it === signal })
+            }
+        })
+        val handler = createSoloSideEffectHandler()
+
+        handler.onSideEffect(cancellableSideEffect)
+        handler.onSideEffect(signalSideEffect)
+
+        assertEquals(TestSideEffect.State.CANCELLED, cancellableSideEffect.state)
+    }
+
     @Test
     fun `side effect events is handler output events`() = runUnconfinedTest {
         val handler = createSoloSideEffectHandler(collectOutputEvents = false)
@@ -267,6 +287,16 @@ class SoloSideEffectHandlerTest {
         override fun toString(): String = name
     }
 
+    class SendSignalRuleFactory(
+        private val name: String,
+        private val ruleFactory: (signal: Any) -> SoloExecutionRule<TestSideEffect>,
+    ) {
+
+        fun createRule(signal: Any) = ruleFactory.invoke(signal)
+
+        override fun toString(): String = name
+    }
+
     private companion object {
 
         const val TEST_DELAY = 100L
@@ -308,6 +338,33 @@ class SoloSideEffectHandlerTest {
                         }
                     }
                 }
+            )
+        }
+
+        @JvmStatic
+        fun provideSendSignalRules(): List<SendSignalRuleFactory> {
+            return listOf(
+                SendSignalRuleFactory("onEnqueue") { signal ->
+                    executionRule {
+                        onEnqueue {
+                            sendSignal(signal)
+                        }
+                    }
+                },
+                SendSignalRuleFactory("onExecute") { signal ->
+                    executionRule {
+                        onExecute {
+                            sendSignal(signal)
+                        }
+                    }
+                },
+                //SendSignalRuleFactory("onCancel") { signal ->
+                //    executionRule {
+                //        onCancel {
+                //            sendSignal(signal)
+                //        }
+                //    }
+                //},
             )
         }
     }

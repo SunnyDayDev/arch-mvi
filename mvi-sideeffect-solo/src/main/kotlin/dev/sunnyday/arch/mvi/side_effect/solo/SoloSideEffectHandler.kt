@@ -20,11 +20,12 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
     private val sideEffectsFlow = MutableSharedFlow<SideEffect>()
     private val signalFlow = MutableSharedFlow<Any>()
 
-    private val executingSideEffectsStore: AtomicStore<Array<ExecutingSideEffect<SideEffect>>> = createSideEffectsStore()
+    private val executingSideEffectsStore: AtomicStore<Array<ExecutingSideEffect<SideEffect>>> =
+        createSideEffectsStore()
 
     private val outputEventsFlow = sideEffectsFlow
         .flatMapMerge(transform = ::flatMapSideEffect)
-        //.shareIn(coroutineScope, SharingStarted.WhileSubscribed(), 0)
+    //.shareIn(coroutineScope, SharingStarted.WhileSubscribed(), 0)
 
     override fun onSideEffect(sideEffect: SideEffect) {
         coroutineScope.launch {
@@ -49,12 +50,10 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             return emptyFlow()
         }
 
-        proceedRule(executingSideEffect, rule.onExecuteRule)
+        val onExecuteRule = proceedRule(executingSideEffect, rule.onExecuteRule)
         if (executingSideEffect.executionState == ExecutingSideEffect.ExecutionState.COMPLETED) {
             return emptyFlow()
         }
-
-        println("sideEffect.execute ${Thread.currentThread().name}")
 
         return sideEffect.execute(dependencies)
             .onStart {
@@ -67,7 +66,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
                 executingSideEffect.executionState = ExecutingSideEffect.ExecutionState.COMPLETED
                 executingSideEffect.isActiveState.emit(false)
             }
-            .takeUntil(executingSideEffect.isActiveState.filterNot { isActive -> isActive })
+            .takeUntil(getCancelSignal(executingSideEffect, onExecuteRule))
     }
 
     private fun addExecutingSideEffect(
@@ -88,22 +87,6 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         return executingSideEffect
     }
 
-    private suspend fun proceedRule(
-        sideEffect: ExecutingSideEffectImpl,
-        rule: (OnEnqueueRule.() -> Unit)?,
-    ) {
-        val onEnqueueRule = OnEnqueueRule(sideEffect)
-        rule?.let { execute -> onEnqueueRule.execute() }
-
-        onEnqueueRule.actions.forEach { action ->
-            action.invoke()
-        }
-
-        if (onEnqueueRule.isSkipped) {
-            sideEffect.executionState = ExecutingSideEffect.ExecutionState.COMPLETED
-        }
-    }
-
     private inline fun transformExecutingSideEffects(
         transform: (Array<ExecutingSideEffect<SideEffect>>) -> Array<ExecutingSideEffect<SideEffect>>
     ) {
@@ -114,6 +97,44 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
                 return
             }
         }
+    }
+
+    private suspend fun proceedRule(
+        sideEffect: ExecutingSideEffectImpl,
+        rule: (OnEnqueueRule.() -> Unit)?,
+    ): OnEnqueueRule {
+        val onEnqueueRule = OnEnqueueRule(sideEffect)
+        rule?.let { execute -> onEnqueueRule.execute() }
+
+        onEnqueueRule.actions.forEach { action ->
+            action.invoke()
+        }
+
+        if (onEnqueueRule.isSkipped) {
+            sideEffect.executionState = ExecutingSideEffect.ExecutionState.COMPLETED
+        }
+
+        return onEnqueueRule
+    }
+
+    private fun getCancelSignal(
+        sideEffect: ExecutingSideEffectImpl,
+        onExecuteRule: OnEnqueueRule,
+    ): Flow<Any> {
+        val cancelSignalFlow = onExecuteRule.cancelOnSignalFilters
+            .takeIf { it.isNotEmpty() }
+            ?.toList()
+            ?.let { filters ->
+                signalFlow.filter { signal ->
+                    filters.any { filter -> filter.accept(signal) }
+                }
+            }
+            ?: emptyFlow()
+
+        return merge(
+            sideEffect.isActiveState.filterNot { isActive -> isActive },
+            cancelSignalFlow,
+        )
     }
 
     private inline operator fun <reified T> Array<T>.minus(element: T): Array<T> {
@@ -197,6 +218,8 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
 
         var isSkipped = false
 
+        val cancelOnSignalFilters = mutableListOf<InstanceFilter<Any, *>>()
+
         override fun skipIfAlreadyExecuting(filter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
             if (isSkipped) return
             isSkipped = executingSideEffectsStore.get().any(filter::accept)
@@ -224,11 +247,13 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         }
 
         override fun registerCancelOnSignal(signalFilter: InstanceFilter<Any, *>) {
-            TODO("Not yet implemented")
+            cancelOnSignalFilters.add(signalFilter)
         }
 
         override fun sendSignal(signal: Any) {
-            TODO("Not yet implemented")
+            coroutineScope.launch {
+                signalFlow.emit(signal)
+            }
         }
 
         override fun cancelOther(sideEffectsFilter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
@@ -271,7 +296,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
 
     internal companion object {
 
-        fun <SideEffect: Any> createSideEffectsStore(): AtomicStore<Array<ExecutingSideEffect<SideEffect>>> {
+        fun <SideEffect : Any> createSideEffectsStore(): AtomicStore<Array<ExecutingSideEffect<SideEffect>>> {
             return JvmAtomicReferenceStore(emptyArray())
         }
     }

@@ -28,9 +28,7 @@ interface SoloExecutionRuleConfig<SideEffect : Any> {
 
     fun onExecute(config: OnExecuteBuilder<SideEffect>.() -> Unit): SoloExecutionRuleConfig<SideEffect>
 
-    fun onCancel(
-        config: OnCancelBuilder<SideEffect>.(trigger: ExecutingSideEffect<SideEffect>) -> Unit,
-    ): SoloExecutionRuleConfig<SideEffect>
+    fun onCancel(config: OnCancelBuilder<SideEffect>.() -> Unit): SoloExecutionRuleConfig<SideEffect>
 
     interface OnEnqueueBuilder<SideEffect : Any> : OnCancelBuilder<SideEffect> {
 

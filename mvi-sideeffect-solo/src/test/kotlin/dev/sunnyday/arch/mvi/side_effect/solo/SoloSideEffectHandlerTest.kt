@@ -205,8 +205,44 @@ class SoloSideEffectHandlerTest {
 
         handler.onSideEffect(cancellableSideEffect)
         handler.onSideEffect(signalSideEffect)
+        sendSignalRuleFactory.ensureSignalSend(handler)
 
         assertEquals(TestSideEffect.State.CANCELLED, cancellableSideEffect.state)
+    }
+
+    @Test
+    fun `notify registered listener for specified side effect executed`() = runUnconfinedTest {
+        val targetSideEffect = TestSideEffect()
+        val listener = mockk<(ExecutingSideEffect<TestSideEffect>) -> Unit>(relaxed = true)
+        val listenerSideEffect = TestSideEffect(executionRule {
+            onExecute {
+                registerListener(InstanceFilter.Filter { it.sideEffect === targetSideEffect }, listener)
+            }
+        })
+        val handler = createSoloSideEffectHandler()
+
+        handler.onSideEffect(listenerSideEffect)
+        handler.onSideEffect(targetSideEffect)
+
+        verify { listener.invoke(match { it.sideEffect === targetSideEffect }) }
+        confirmVerified(listener)
+    }
+
+    @Test
+    fun `don't notify registered listener if unspecified side effect executed`() = runUnconfinedTest {
+        val targetSideEffect = TestSideEffect()
+        val listener = mockk<(ExecutingSideEffect<TestSideEffect>) -> Unit>(relaxed = true)
+        val listenerSideEffect = TestSideEffect(executionRule {
+            onExecute {
+                registerListener(InstanceFilter.Filter { false }, listener)
+            }
+        })
+        val handler = createSoloSideEffectHandler()
+
+        handler.onSideEffect(listenerSideEffect)
+        handler.onSideEffect(targetSideEffect)
+
+        confirmVerified(listener)
     }
 
     @Test
@@ -287,14 +323,29 @@ class SoloSideEffectHandlerTest {
         override fun toString(): String = name
     }
 
-    class SendSignalRuleFactory(
+    abstract class SendSignalRuleFactory(
         private val name: String,
-        private val ruleFactory: (signal: Any) -> SoloExecutionRule<TestSideEffect>,
     ) {
 
-        fun createRule(signal: Any) = ruleFactory.invoke(signal)
+        abstract fun createRule(signal: Any): SoloExecutionRule<TestSideEffect>
+
+        open fun ensureSignalSend(handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>) = Unit
 
         override fun toString(): String = name
+
+        companion object {
+
+            operator fun invoke(
+                name: String,
+                ruleFactory: (signal: Any) -> SoloExecutionRule<TestSideEffect>,
+            ): SendSignalRuleFactory {
+                return object : SendSignalRuleFactory(name) {
+                    override fun createRule(signal: Any): SoloExecutionRule<TestSideEffect> {
+                        return ruleFactory.invoke(signal)
+                    }
+                }
+            }
+        }
     }
 
     private companion object {
@@ -358,13 +409,31 @@ class SoloSideEffectHandlerTest {
                         }
                     }
                 },
-                //SendSignalRuleFactory("onCancel") { signal ->
-                //    executionRule {
-                //        onCancel {
-                //            sendSignal(signal)
-                //        }
-                //    }
-                //},
+                object : SendSignalRuleFactory("onCancel") {
+
+                    private val cancelSignal = Any()
+
+                    override fun createRule(signal: Any): SoloExecutionRule<TestSideEffect> {
+                        return executionRule {
+                            onExecute {
+                                registerCancelOnSignal(InstanceFilter.Filter { it === cancelSignal })
+                            }
+                            onCancel {
+                                sendSignal(signal)
+                            }
+                        }
+                    }
+
+                    override fun ensureSignalSend(handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>) {
+                        val cancelSideEffect = TestSideEffect(executionRule {
+                            onExecute {
+                                sendSignal(cancelSignal)
+                            }
+                        })
+
+                        handler.onSideEffect(cancelSideEffect)
+                    }
+                },
             )
         }
     }

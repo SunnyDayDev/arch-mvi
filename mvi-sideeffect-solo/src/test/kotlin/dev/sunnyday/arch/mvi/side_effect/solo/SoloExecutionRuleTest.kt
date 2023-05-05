@@ -49,7 +49,7 @@ class SoloExecutionRuleTest {
         val config = mockk<SoloExecutionRuleConfig<SideEffect>>(relaxed = true)
         val onEnqueueConfig = mockk<OnEnqueueBuilder<out SideEffect>.() -> Unit>()
         val onExecuteConfig = mockk<OnExecuteBuilder<out SideEffect>.() -> Unit>()
-        val onCancelConfig = mockk<OnCancelBuilder<out SideEffect>.(ExecutingSideEffect<SideEffect>) -> Unit>()
+        val onCancelConfig = mockk<OnCancelBuilder<out SideEffect>.() -> Unit>()
 
         @Suppress("RemoveExplicitTypeArguments")
         val rule = executionRule<SideEffect> {

@@ -118,6 +118,22 @@ class SoloSideEffectHandlerTest {
         assertEquals(TestSideEffect.State.EXECUTING, sideEffect.state)
     }
 
+    @ParameterizedTest
+    @MethodSource("provideGetExecutingSideEffectsRules")
+    fun `getExecutingSideEffects returns current executing side effects`(
+        ruleFactory: GetExecutingSideEffectsRuleFactory,
+    ) = runUnconfinedTest {
+        val collector = mutableListOf<ExecutingSideEffect<TestSideEffect>>()
+        val executingSideEffect = TestSideEffect()
+        val checkSideEffect = TestSideEffect(ruleFactory.createRule(collector))
+
+        val handler = createSoloSideEffectHandler()
+        handler.onSideEffect(executingSideEffect)
+        handler.onSideEffect(checkSideEffect)
+
+        assertEquals(executingSideEffect, collector.singleOrNull()?.sideEffect)
+    }
+
     @Test
     fun `await complete on enqueue delays execution until specified sideeffects complete`() = runUnconfinedTest {
         val root = TestSideEffect()
@@ -316,16 +332,11 @@ class SoloSideEffectHandlerTest {
     }
 
     class NamedTargetSideEffectRuleFactory(
-        private val name: String,
+        name: String,
         ruleFactory: TargetSideEffectRuleFactory,
-    ) : TargetSideEffectRuleFactory by ruleFactory {
+    ) : NamedTestCase(name), TargetSideEffectRuleFactory by ruleFactory
 
-        override fun toString(): String = name
-    }
-
-    abstract class SendSignalRuleFactory(
-        private val name: String,
-    ) {
+    abstract class SendSignalRuleFactory(name: String) : NamedTestCase(name) {
 
         abstract fun createSignalRule(signal: Any): SoloExecutionRule<TestSideEffect>
 
@@ -333,8 +344,6 @@ class SoloSideEffectHandlerTest {
             signalSideEffect: TestSideEffect,
             handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>,
         ) = Unit
-
-        override fun toString(): String = name
 
         companion object {
 
@@ -349,6 +358,19 @@ class SoloSideEffectHandlerTest {
                 }
             }
         }
+    }
+
+    class GetExecutingSideEffectsRuleFactory(
+        name: String,
+        private val ruleFactory: (collector: MutableList<ExecutingSideEffect<TestSideEffect>>) -> SoloExecutionRule<TestSideEffect>,
+    ) : NamedTestCase(name) {
+
+        fun createRule(collector: MutableList<ExecutingSideEffect<TestSideEffect>>) = ruleFactory.invoke(collector)
+    }
+
+    abstract class NamedTestCase(private val name: String) {
+
+        override fun toString(): String = name
     }
 
     private companion object {
@@ -436,6 +458,33 @@ class SoloSideEffectHandlerTest {
                         handler.onSideEffect(cancelSignalSideEffect)
                     }
                 },
+            )
+        }
+
+        @JvmStatic
+        fun provideGetExecutingSideEffectsRules(): List<GetExecutingSideEffectsRuleFactory> {
+            return listOf(
+                GetExecutingSideEffectsRuleFactory("onEnqueue") { collector ->
+                    executionRule {
+                        onEnqueue {
+                            collector.addAll(getExecutingSideEffects())
+                        }
+                    }
+                },
+                GetExecutingSideEffectsRuleFactory("onExecute") { collector ->
+                    executionRule {
+                        onExecute {
+                            collector.addAll(getExecutingSideEffects())
+                        }
+                    }
+                },
+                // GetExecutingSideEffectsRuleFactory("onCancel") { collector ->
+                //     executionRule {
+                //         onCancel {
+                //             collector.addAll(getExecutingSideEffects())
+                //         }
+                //     }
+                // },
             )
         }
     }

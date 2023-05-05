@@ -195,7 +195,7 @@ class SoloSideEffectHandlerTest {
         sendSignalRuleFactory: SendSignalRuleFactory,
     ) = runUnconfinedTest {
         val signal = Any()
-        val signalSideEffect = TestSideEffect(sendSignalRuleFactory.createRule(signal))
+        val signalSideEffect = TestSideEffect(sendSignalRuleFactory.createSignalRule(signal))
         val cancellableSideEffect = TestSideEffect(executionRule {
             onExecute {
                 registerCancelOnSignal(InstanceFilter.Filter { it === signal })
@@ -205,7 +205,7 @@ class SoloSideEffectHandlerTest {
 
         handler.onSideEffect(cancellableSideEffect)
         handler.onSideEffect(signalSideEffect)
-        sendSignalRuleFactory.ensureSignalSend(handler)
+        sendSignalRuleFactory.ensureSignalSend(signalSideEffect, handler)
 
         assertEquals(TestSideEffect.State.CANCELLED, cancellableSideEffect.state)
     }
@@ -327,9 +327,12 @@ class SoloSideEffectHandlerTest {
         private val name: String,
     ) {
 
-        abstract fun createRule(signal: Any): SoloExecutionRule<TestSideEffect>
+        abstract fun createSignalRule(signal: Any): SoloExecutionRule<TestSideEffect>
 
-        open fun ensureSignalSend(handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>) = Unit
+        open fun ensureSignalSend(
+            signalSideEffect: TestSideEffect,
+            handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>,
+        ) = Unit
 
         override fun toString(): String = name
 
@@ -340,7 +343,7 @@ class SoloSideEffectHandlerTest {
                 ruleFactory: (signal: Any) -> SoloExecutionRule<TestSideEffect>,
             ): SendSignalRuleFactory {
                 return object : SendSignalRuleFactory(name) {
-                    override fun createRule(signal: Any): SoloExecutionRule<TestSideEffect> {
+                    override fun createSignalRule(signal: Any): SoloExecutionRule<TestSideEffect> {
                         return ruleFactory.invoke(signal)
                     }
                 }
@@ -411,27 +414,26 @@ class SoloSideEffectHandlerTest {
                 },
                 object : SendSignalRuleFactory("onCancel") {
 
-                    private val cancelSignal = Any()
-
-                    override fun createRule(signal: Any): SoloExecutionRule<TestSideEffect> {
+                    override fun createSignalRule(signal: Any): SoloExecutionRule<TestSideEffect> {
                         return executionRule {
-                            onExecute {
-                                registerCancelOnSignal(InstanceFilter.Filter { it === cancelSignal })
-                            }
                             onCancel {
                                 sendSignal(signal)
                             }
                         }
                     }
 
-                    override fun ensureSignalSend(handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>) {
-                        val cancelSideEffect = TestSideEffect(executionRule {
+                    override fun ensureSignalSend(
+                        signalSideEffect: TestSideEffect,
+                        handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>,
+                    ) {
+                        val cancelSignalSideEffect = TestSideEffect(executionRule {
                             onExecute {
-                                sendSignal(cancelSignal)
+                                getExecutingSideEffects(InstanceFilter.Filter { it.sideEffect == signalSideEffect })
+                                    .forEach { it.cancel() }
                             }
                         })
 
-                        handler.onSideEffect(cancelSideEffect)
+                        handler.onSideEffect(cancelSignalSideEffect)
                     }
                 },
             )

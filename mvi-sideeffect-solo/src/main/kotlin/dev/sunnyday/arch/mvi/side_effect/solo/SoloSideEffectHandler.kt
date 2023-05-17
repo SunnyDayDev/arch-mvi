@@ -3,6 +3,7 @@ package dev.sunnyday.arch.mvi.side_effect.solo
 import dev.sunnyday.arch.mvi.SideEffectHandler
 import dev.sunnyday.arch.mvi.primitive.ObservableEvent
 import dev.sunnyday.arch.mvi.coroutine.ktx.toObservable
+import dev.sunnyday.arch.mvi.primitive.Cancellable
 import dev.sunnyday.arch.mvi.side_effect.solo.SoloExecutionRuleConfig.*
 import dev.sunnyday.arch.mvi.side_effect.solo.util.AtomicStore
 import dev.sunnyday.arch.mvi.side_effect.solo.util.JvmAtomicReferenceStore
@@ -26,7 +27,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
 
     private val outputEventsFlow = sideEffectsFlow
         .flatMapMerge(transform = ::flatMapSideEffect)
-    //.shareIn(coroutineScope, SharingStarted.WhileSubscribed(), 0)
+        .shareIn(coroutineScope, SharingStarted.WhileSubscribed(), 0)
 
     override fun onSideEffect(sideEffect: SideEffect) {
         coroutineScope.launch {

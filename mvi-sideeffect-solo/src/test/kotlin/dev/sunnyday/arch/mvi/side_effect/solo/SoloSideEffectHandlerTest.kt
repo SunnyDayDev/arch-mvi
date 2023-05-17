@@ -275,14 +275,14 @@ class SoloSideEffectHandlerTest {
         assertEquals(listOf(expectedEvent), handlerEvents)
     }
 
-    private suspend fun TestScope.createSoloSideEffectHandler(
+    private suspend fun createSoloSideEffectHandler(
         collectOutputEvents: Boolean = true,
     ): SoloSideEffectHandler<TestDependencies, TestSideEffect, Event> {
         val currentCoroutineContext = currentCoroutineContext()
 
         return SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>(
             dependencies = dependencies,
-            coroutineScope = this,
+            coroutineScope = createTestSubScope(),
             dispatcher = requireNotNull(currentCoroutineContext[CoroutineDispatcher]),
         ).also { handler ->
             if (collectOutputEvents) {

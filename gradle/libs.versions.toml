@@ -3,10 +3,10 @@
 #-----------------
 [versions]
 jdkVersion = "8"
-kotlin = "1.8.10"
-coroutines = "1.6.4"
-mockk = "1.13.3"
-junit5 = "5.8.1"
+kotlin = "1.8.20"
+coroutines = "1.7.1"
+mockk = "1.13.5"
+junit5 = "5.9.3"
 
 #-----------------
 # Libraries

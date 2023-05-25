@@ -11,7 +11,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlin.time.Duration
 
-@OptIn(FlowPreview::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Dependencies, SideEffect, Event>, Event : Any>(
     private val dependencies: Dependencies,
     private val coroutineScope: CoroutineScope,
@@ -207,6 +207,10 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         suspend fun cancelInternal() {
             isActiveState.emit(false)
         }
+
+        override fun toString(): String {
+            return "ExecutingSideEffect($id)"
+        }
     }
 
     private inner class SideEffectRule : SoloExecutionRuleConfig<SideEffect> {
@@ -233,7 +237,9 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             onExecuteRule = config
         }
 
-        override fun onCancel(config: OnCancelBuilder<SideEffect>.() -> Unit, ): SoloExecutionRuleConfig<SideEffect> = apply {
+        override fun onCancel(
+            config: OnCancelBuilder<SideEffect>.() -> Unit,
+        ): SoloExecutionRuleConfig<SideEffect> = apply {
             onCancelRule = config
         }
     }

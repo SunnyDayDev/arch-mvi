@@ -124,12 +124,16 @@ class SoloSideEffectHandlerTest {
         ruleFactory: GetExecutingSideEffectsRuleFactory,
     ) = runUnconfinedTest {
         val collector = mutableListOf<ExecutingSideEffect<TestSideEffect>>()
-        val executingSideEffect = TestSideEffect()
+        val executingSideEffect = TestSideEffect(executionRule {
+            setId(ExecutingSideEffect.Id.Custom("target"))
+        })
         val checkSideEffect = TestSideEffect(ruleFactory.createRule(collector))
 
         val handler = createSoloSideEffectHandler()
         handler.onSideEffect(executingSideEffect)
         handler.onSideEffect(checkSideEffect)
+
+        ruleFactory.executeTrigger(handler)
 
         assertEquals(executingSideEffect, collector.singleOrNull()?.sideEffect)
     }
@@ -362,10 +366,15 @@ class SoloSideEffectHandlerTest {
 
     class GetExecutingSideEffectsRuleFactory(
         name: String,
+        private val executeTrigger: (SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>) -> Unit = {},
         private val ruleFactory: (collector: MutableList<ExecutingSideEffect<TestSideEffect>>) -> SoloExecutionRule<TestSideEffect>,
     ) : NamedTestCase(name) {
 
         fun createRule(collector: MutableList<ExecutingSideEffect<TestSideEffect>>) = ruleFactory.invoke(collector)
+
+        fun executeTrigger(handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>) {
+            executeTrigger.invoke(handler)
+        }
     }
 
     abstract class NamedTestCase(private val name: String) {
@@ -450,8 +459,7 @@ class SoloSideEffectHandlerTest {
                     ) {
                         val cancelSignalSideEffect = TestSideEffect(executionRule {
                             onExecute {
-                                getExecutingSideEffects(InstanceFilter.Filter { it.sideEffect == signalSideEffect })
-                                    .forEach { it.cancel() }
+                                cancelOther(InstanceFilter.Filter { it.sideEffect == signalSideEffect })
                             }
                         })
 
@@ -466,6 +474,7 @@ class SoloSideEffectHandlerTest {
             return listOf(
                 GetExecutingSideEffectsRuleFactory("onEnqueue") { collector ->
                     executionRule {
+                        setId(ExecutingSideEffect.Id.Custom("check"))
                         onEnqueue {
                             collector.addAll(getExecutingSideEffects())
                         }
@@ -473,18 +482,33 @@ class SoloSideEffectHandlerTest {
                 },
                 GetExecutingSideEffectsRuleFactory("onExecute") { collector ->
                     executionRule {
+                        setId(ExecutingSideEffect.Id.Custom("check"))
                         onExecute {
                             collector.addAll(getExecutingSideEffects())
                         }
                     }
                 },
-                // GetExecutingSideEffectsRuleFactory("onCancel") { collector ->
-                //     executionRule {
-                //         onCancel {
-                //             collector.addAll(getExecutingSideEffects())
-                //         }
-                //     }
-                // },
+                GetExecutingSideEffectsRuleFactory(
+                    name = "onCancel",
+                    executeTrigger = { handler ->
+                        handler.onSideEffect(TestSideEffect(executionRule {
+                            setId(ExecutingSideEffect.Id.Custom("dementor"))
+                            onEnqueue {
+                                val cancelSideEffectId = ExecutingSideEffect.Id.Custom("check")
+                                cancelOther(InstanceFilter.Filter { it.id == cancelSideEffectId })
+                            }
+                        }))
+                    },
+                    ruleFactory = { collector ->
+                        executionRule {
+                            setId(ExecutingSideEffect.Id.Custom("check"))
+                            onCancel {
+                                val dementorId = ExecutingSideEffect.Id.Custom("dementor")
+                                collector.addAll(getExecutingSideEffects(InstanceFilter.Filter { it.id != dementorId }))
+                            }
+                        }
+                    }
+                ),
             )
         }
     }

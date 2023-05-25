@@ -20,27 +20,27 @@ class CoroutineMviFeatureStarterTest {
     fun `start new feature`() = mockkConstructor(CoroutineMviFeatureInstanceFactoryScope::class) {
         val expectedFeature = mockk<MviFeature<State, InputEvent>>()
         val factoryCallContext = MviFactoryCallContext()
-        val initialStateProvider = stub<InitialStateProvider<State>>(mockk {
+        val initialStateProvider = stub<InitialStateProvider<State>> {
             every { provideInitialState() } returns State("initial")
-        })
+        }
         val initialEventsProvider = stub<InitialEventsProvider<State, Event>>()
         val initialInputEventsProvider = stub<InitialEventsProvider<State, InputEvent>>()
         val initialSideEffectsProvider = stub<InitialSideEffectsProvider<State, SideEffect>>()
         val stateMachineInstanceFactory = stub<StateMachineInstanceFactory<State, Event, SideEffect>>()
         val featureFactoryScopeSlot = slot<MviFeatureInstanceFactory.FactoryScope<State, InputEvent, Event, SideEffect>>()
-        val featureInstanceFactory = stub<MviFeatureInstanceFactory<State, InputEvent, Event, SideEffect>>(mockk {
+        val featureInstanceFactory = stub<MviFeatureInstanceFactory<State, InputEvent, Event, SideEffect>> {
             every {
                 run { capture(featureFactoryScopeSlot).createFeature() }
             } returns expectedFeature
-        })
+        }
 
         val scopeConstructorRule =
             ConstructorRule.create<CoroutineMviFeatureInstanceFactoryScope<State, InputEvent, Event, SideEffect>>(
                 EqMatcher(State("initial")),
                 EqMatcher(stateMachineInstanceFactory, ref = true),
-                        EqMatcher(initialInputEventsProvider, ref = true),
-                        EqMatcher(initialEventsProvider, ref = true),
-                        EqMatcher(initialSideEffectsProvider, ref = true),
+                EqMatcher(initialInputEventsProvider, ref = true),
+                EqMatcher(initialEventsProvider, ref = true),
+                EqMatcher(initialSideEffectsProvider, ref = true),
             )
 
         val starter = CoroutineMviFeatureStarter(

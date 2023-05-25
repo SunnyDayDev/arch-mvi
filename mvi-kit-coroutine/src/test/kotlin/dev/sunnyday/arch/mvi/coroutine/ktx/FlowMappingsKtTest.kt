@@ -9,7 +9,6 @@ import dev.sunnyday.arch.mvi.test.runUnconfinedTest
 import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.test.*
 import org.junit.jupiter.api.Test
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.properties.Delegates

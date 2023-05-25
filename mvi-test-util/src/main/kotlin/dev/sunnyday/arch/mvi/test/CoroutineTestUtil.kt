@@ -8,6 +8,8 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 
 object CoroutineTestUtil {
@@ -74,6 +76,6 @@ suspend fun createTestSubScope(): CoroutineScope {
 @ExperimentalCoroutinesApi
 fun runUnconfinedTest(
     context: CoroutineContext = EmptyCoroutineContext,
-    dispatchTimeoutMs: Long = 60_000L,
+    timout: Duration = 10.seconds,
     testBody: suspend TestScope.() -> Unit
-) = runTest(context + UnconfinedTestDispatcher(), dispatchTimeoutMs, testBody)
+) = runTest(context + UnconfinedTestDispatcher(), timout, testBody)

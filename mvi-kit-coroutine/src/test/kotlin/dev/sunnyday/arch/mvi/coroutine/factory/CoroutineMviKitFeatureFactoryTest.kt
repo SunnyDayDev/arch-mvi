@@ -26,8 +26,7 @@ class CoroutineMviKitFeatureFactoryTest {
         val initialState = State("initial")
         val eventHandler = stub<EventHandler<InputEvent, Event>>()
         val sideEffectHandler = stub<SideEffectHandler<SideEffect, Event>>()
-        val stateMachineFactoryMock = mockk<StateMachineInstanceFactory<State, Event, SideEffect>>()
-        val stateMachineFactory = stub(stateMachineFactoryMock)
+        val stateMachineFactory = stub<StateMachineInstanceFactory<State, Event, SideEffect>>()
         val onReadyCallback = stub<OnReadyCallback>()
         val stateMachine = stub<StateMachine<State, Event, SideEffect>>()
 

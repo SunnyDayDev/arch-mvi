@@ -121,19 +121,19 @@ class SoloSideEffectHandlerTest {
     @ParameterizedTest
     @MethodSource("provideGetExecutingSideEffectsRules")
     fun `getExecutingSideEffects returns current executing side effects`(
-        ruleFactory: GetExecutingSideEffectsRuleFactory,
+        testCase: SideEffectTestCaseStrategy<MutableList<ExecutingSideEffect<TestSideEffect>>>,
     ) = runUnconfinedTest {
         val collector = mutableListOf<ExecutingSideEffect<TestSideEffect>>()
         val executingSideEffect = TestSideEffect(executionRule {
             setId(ExecutingSideEffect.Id.Custom("target"))
         })
-        val checkSideEffect = TestSideEffect(ruleFactory.createRule(collector))
+        val checkSideEffect = TestSideEffect(testCase.createSideEffectRule(collector))
 
         val handler = createSoloSideEffectHandler()
         handler.onSideEffect(executingSideEffect)
         handler.onSideEffect(checkSideEffect)
 
-        ruleFactory.executeTrigger(handler)
+        testCase.onSideEffect(handler, checkSideEffect)
 
         assertEquals(executingSideEffect, collector.singleOrNull()?.sideEffect)
     }
@@ -162,11 +162,11 @@ class SoloSideEffectHandlerTest {
     @ParameterizedTest
     @MethodSource("provideSkipIfAlreadyExecutingRules")
     fun `skip if already executing specified sideeffect`(
-        skipIfAlreadyExecutingRuleFactory: TargetSideEffectRuleFactory
+        skipIfAlreadyExecutingRuleFactory: SideEffectTestCaseStrategy<TestSideEffect>
     ) = runUnconfinedTest {
         val targetSideEffect = TestSideEffect()
         val dependendSideEffect =
-            TestSideEffect(skipIfAlreadyExecutingRuleFactory.createRuleForTarget(targetSideEffect))
+            TestSideEffect(skipIfAlreadyExecutingRuleFactory.createSideEffectRule(targetSideEffect))
 
         val handler = createSoloSideEffectHandler()
 
@@ -180,9 +180,9 @@ class SoloSideEffectHandlerTest {
     @ParameterizedTest
     @MethodSource("provideSkipIfAlreadyExecutingRules")
     fun `don't skip if already executing sideeffect isn't present`(
-        skipIfAlreadyExecutingRuleFactory: TargetSideEffectRuleFactory
+        testCase: SideEffectTestCaseStrategy<TestSideEffect?>
     ) = runUnconfinedTest {
-        val sideEffect = TestSideEffect(skipIfAlreadyExecutingRuleFactory.createRuleForTarget(null))
+        val sideEffect = TestSideEffect(testCase.createSideEffectRule(null))
 
         val handler = createSoloSideEffectHandler()
         handler.onSideEffect(sideEffect)
@@ -193,10 +193,10 @@ class SoloSideEffectHandlerTest {
     @ParameterizedTest
     @MethodSource("provideCancelOtherRules")
     fun `cancelOther(_) cancels other side effect`(
-        cancelOtherRuleFactory: TargetSideEffectRuleFactory
+        testCase: SideEffectTestCaseStrategy<TestSideEffect>
     ) = runUnconfinedTest {
         val targetSideEffect = TestSideEffect()
-        val sideEffect = TestSideEffect(cancelOtherRuleFactory.createRuleForTarget(targetSideEffect))
+        val sideEffect = TestSideEffect(testCase.createSideEffectRule(targetSideEffect))
 
         val handler = createSoloSideEffectHandler()
 
@@ -205,6 +205,7 @@ class SoloSideEffectHandlerTest {
         assertEquals(TestSideEffect.State.EXECUTING, targetSideEffect.state)
 
         handler.onSideEffect(sideEffect)
+        testCase.onSideEffect(handler, sideEffect)
 
         assertEquals(TestSideEffect.State.CANCELLED, targetSideEffect.state)
     }
@@ -212,10 +213,10 @@ class SoloSideEffectHandlerTest {
     @ParameterizedTest
     @MethodSource("provideSendSignalRules")
     fun `cancelOnSignal cancels side effect when signal received`(
-        sendSignalRuleFactory: SendSignalRuleFactory,
+        testCase: SideEffectTestCaseStrategy<Any>,
     ) = runUnconfinedTest {
         val signal = Any()
-        val signalSideEffect = TestSideEffect(sendSignalRuleFactory.createSignalRule(signal))
+        val signalSideEffect = TestSideEffect(testCase.createSideEffectRule(signal))
         val cancellableSideEffect = TestSideEffect(executionRule {
             onExecute {
                 registerCancelOnSignal(InstanceFilter.Filter { it === signal })
@@ -225,7 +226,7 @@ class SoloSideEffectHandlerTest {
 
         handler.onSideEffect(cancellableSideEffect)
         handler.onSideEffect(signalSideEffect)
-        sendSignalRuleFactory.ensureSignalSend(signalSideEffect, handler)
+        testCase.onSideEffect(handler, signalSideEffect)
 
         assertEquals(TestSideEffect.State.CANCELLED, cancellableSideEffect.state)
     }
@@ -330,75 +331,72 @@ class SoloSideEffectHandlerTest {
         }
     }
 
-    fun interface TargetSideEffectRuleFactory {
+    abstract class SideEffectTestCaseStrategy<T>(
+        private val name: String,
+    ) {
 
-        fun createRuleForTarget(sideEffect: TestSideEffect?): SoloExecutionRule<TestSideEffect>
-    }
+        abstract fun createSideEffectRule(target: T): SoloExecutionRule<TestSideEffect>
 
-    class NamedTargetSideEffectRuleFactory(
-        name: String,
-        ruleFactory: TargetSideEffectRuleFactory,
-    ) : NamedTestCase(name), TargetSideEffectRuleFactory by ruleFactory
-
-    abstract class SendSignalRuleFactory(name: String) : NamedTestCase(name) {
-
-        abstract fun createSignalRule(signal: Any): SoloExecutionRule<TestSideEffect>
-
-        open fun ensureSignalSend(
-            signalSideEffect: TestSideEffect,
+        open fun onSideEffect(
             handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>,
+            ruleSideEffect: TestSideEffect,
         ) = Unit
+
+        override fun toString(): String {
+            return name
+        }
 
         companion object {
 
-            operator fun invoke(
+            fun <T> create(
                 name: String,
-                ruleFactory: (signal: Any) -> SoloExecutionRule<TestSideEffect>,
-            ): SendSignalRuleFactory {
-                return object : SendSignalRuleFactory(name) {
-                    override fun createSignalRule(signal: Any): SoloExecutionRule<TestSideEffect> {
-                        return ruleFactory.invoke(signal)
-                    }
+                onSideEffect: (
+                    handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>,
+                    ruleSideEffect: TestSideEffect,
+                ) -> Unit = { _, _ -> },
+                ruleFactory: (target: T) -> SoloExecutionRule<TestSideEffect>,
+            ): SideEffectTestCaseStrategy<T> = object : SideEffectTestCaseStrategy<T>(name) {
+
+                override fun createSideEffectRule(target: T): SoloExecutionRule<TestSideEffect> {
+                    return ruleFactory.invoke(target)
+                }
+
+                override fun onSideEffect(
+                    handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>,
+                    ruleSideEffect: TestSideEffect
+                ) {
+                    onSideEffect.invoke(handler, ruleSideEffect)
                 }
             }
         }
-    }
-
-    class GetExecutingSideEffectsRuleFactory(
-        name: String,
-        private val executeTrigger: (SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>) -> Unit = {},
-        private val ruleFactory: (collector: MutableList<ExecutingSideEffect<TestSideEffect>>) -> SoloExecutionRule<TestSideEffect>,
-    ) : NamedTestCase(name) {
-
-        fun createRule(collector: MutableList<ExecutingSideEffect<TestSideEffect>>) = ruleFactory.invoke(collector)
-
-        fun executeTrigger(handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>) {
-            executeTrigger.invoke(handler)
-        }
-    }
-
-    abstract class NamedTestCase(private val name: String) {
-
-        override fun toString(): String = name
     }
 
     private companion object {
 
         const val TEST_DELAY = 100L
 
+        private val CANCEL_ID = ExecutingSideEffect.Id.Unique()
+
         @JvmStatic
-        fun provideCancelOtherRules(): List<TargetSideEffectRuleFactory> {
+        fun provideCancelOtherRules(): List<SideEffectTestCaseStrategy<TestSideEffect>> {
             return listOf(
-                NamedTargetSideEffectRuleFactory("onEnqueue") { target ->
+                SideEffectTestCaseStrategy.create("onEnqueue") { target ->
                     executionRule {
                         onEnqueue {
                             cancelOther(InstanceFilter.Filter { it.sideEffect === target })
                         }
                     }
                 },
-                NamedTargetSideEffectRuleFactory("onExecute") { target ->
+                SideEffectTestCaseStrategy.create("onExecute") { target ->
                     executionRule {
                         onExecute {
+                            cancelOther(InstanceFilter.Filter { it.sideEffect === target })
+                        }
+                    }
+                },
+                SideEffectTestCaseStrategy.create("onCancel", cancelRuleSideEffect()) { target ->
+                    executionRule {
+                        onCancel {
                             cancelOther(InstanceFilter.Filter { it.sideEffect === target })
                         }
                     }
@@ -407,16 +405,16 @@ class SoloSideEffectHandlerTest {
         }
 
         @JvmStatic
-        fun provideSkipIfAlreadyExecutingRules(): List<TargetSideEffectRuleFactory> {
+        fun provideSkipIfAlreadyExecutingRules(): List<SideEffectTestCaseStrategy<TestSideEffect?>> {
             return listOf(
-                NamedTargetSideEffectRuleFactory("onEnqueue") { target ->
+                SideEffectTestCaseStrategy.create("onEnqueue") { target ->
                     executionRule {
                         onEnqueue {
                             skipIfAlreadyExecuting(InstanceFilter.Filter { it.sideEffect === target })
                         }
                     }
                 },
-                NamedTargetSideEffectRuleFactory("onExecute") { target ->
+                SideEffectTestCaseStrategy.create("onExecute") { target ->
                     executionRule {
                         onExecute {
                             skipIfAlreadyExecuting(InstanceFilter.Filter { it.sideEffect === target })
@@ -427,52 +425,36 @@ class SoloSideEffectHandlerTest {
         }
 
         @JvmStatic
-        fun provideSendSignalRules(): List<SendSignalRuleFactory> {
+        fun provideSendSignalRules(): List<SideEffectTestCaseStrategy<Any>> {
             return listOf(
-                SendSignalRuleFactory("onEnqueue") { signal ->
+                SideEffectTestCaseStrategy.create("onEnqueue") { signal ->
                     executionRule {
                         onEnqueue {
                             sendSignal(signal)
                         }
                     }
                 },
-                SendSignalRuleFactory("onExecute") { signal ->
+                SideEffectTestCaseStrategy.create("onExecute") { signal ->
                     executionRule {
                         onExecute {
                             sendSignal(signal)
                         }
                     }
                 },
-                object : SendSignalRuleFactory("onCancel") {
-
-                    override fun createSignalRule(signal: Any): SoloExecutionRule<TestSideEffect> {
-                        return executionRule {
-                            onCancel {
-                                sendSignal(signal)
-                            }
+                SideEffectTestCaseStrategy.create("onCancel", cancelRuleSideEffect()) { signal ->
+                    executionRule {
+                        onCancel {
+                            sendSignal(signal)
                         }
-                    }
-
-                    override fun ensureSignalSend(
-                        signalSideEffect: TestSideEffect,
-                        handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>,
-                    ) {
-                        val cancelSignalSideEffect = TestSideEffect(executionRule {
-                            onExecute {
-                                cancelOther(InstanceFilter.Filter { it.sideEffect == signalSideEffect })
-                            }
-                        })
-
-                        handler.onSideEffect(cancelSignalSideEffect)
                     }
                 },
             )
         }
 
         @JvmStatic
-        fun provideGetExecutingSideEffectsRules(): List<GetExecutingSideEffectsRuleFactory> {
+        fun provideGetExecutingSideEffectsRules(): List<SideEffectTestCaseStrategy<MutableList<ExecutingSideEffect<TestSideEffect>>>> {
             return listOf(
-                GetExecutingSideEffectsRuleFactory("onEnqueue") { collector ->
+                SideEffectTestCaseStrategy.create("onEnqueue") { collector ->
                     executionRule {
                         setId(ExecutingSideEffect.Id.Custom("check"))
                         onEnqueue {
@@ -480,7 +462,7 @@ class SoloSideEffectHandlerTest {
                         }
                     }
                 },
-                GetExecutingSideEffectsRuleFactory("onExecute") { collector ->
+                SideEffectTestCaseStrategy.create("onExecute") { collector ->
                     executionRule {
                         setId(ExecutingSideEffect.Id.Custom("check"))
                         onExecute {
@@ -488,28 +470,30 @@ class SoloSideEffectHandlerTest {
                         }
                     }
                 },
-                GetExecutingSideEffectsRuleFactory(
-                    name = "onCancel",
-                    executeTrigger = { handler ->
-                        handler.onSideEffect(TestSideEffect(executionRule {
-                            setId(ExecutingSideEffect.Id.Custom("dementor"))
-                            onEnqueue {
-                                val cancelSideEffectId = ExecutingSideEffect.Id.Custom("check")
-                                cancelOther(InstanceFilter.Filter { it.id == cancelSideEffectId })
-                            }
-                        }))
-                    },
-                    ruleFactory = { collector ->
-                        executionRule {
-                            setId(ExecutingSideEffect.Id.Custom("check"))
-                            onCancel {
-                                val dementorId = ExecutingSideEffect.Id.Custom("dementor")
-                                collector.addAll(getExecutingSideEffects(InstanceFilter.Filter { it.id != dementorId }))
-                            }
+                SideEffectTestCaseStrategy.create("onCancel", cancelRuleSideEffect()) { collector ->
+                    executionRule {
+                        onCancel {
+                            collector.addAll(getExecutingSideEffects(InstanceFilter.Filter { it.id != CANCEL_ID }))
                         }
                     }
-                ),
+                },
             )
+        }
+
+        private fun cancelRuleSideEffect(): (
+            handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>,
+            ruleSideEffect: TestSideEffect,
+        ) -> Unit {
+            return { handler, ruleSideEffect ->
+                val cancelSignalSideEffect = TestSideEffect(executionRule {
+                    setId(CANCEL_ID)
+                    onExecute {
+                        cancelOther(InstanceFilter.Filter { it.sideEffect == ruleSideEffect })
+                    }
+                })
+
+                handler.onSideEffect(cancelSignalSideEffect)
+            }
         }
     }
 }

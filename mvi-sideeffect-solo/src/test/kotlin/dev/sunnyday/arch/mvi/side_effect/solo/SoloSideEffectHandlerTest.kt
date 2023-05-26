@@ -456,7 +456,6 @@ class SoloSideEffectHandlerTest {
             return listOf(
                 SideEffectTestCaseStrategy.create("onEnqueue") { collector ->
                     executionRule {
-                        setId(ExecutingSideEffect.Id.Custom("check"))
                         onEnqueue {
                             collector.addAll(getExecutingSideEffects())
                         }
@@ -464,7 +463,6 @@ class SoloSideEffectHandlerTest {
                 },
                 SideEffectTestCaseStrategy.create("onExecute") { collector ->
                     executionRule {
-                        setId(ExecutingSideEffect.Id.Custom("check"))
                         onExecute {
                             collector.addAll(getExecutingSideEffects())
                         }

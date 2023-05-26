@@ -111,7 +111,7 @@ class SoloSideEffectHandlerTest {
         advanceTimeBy(delayDuration.inWholeMilliseconds - 1)
         runCurrent()
 
-        assertEquals(TestSideEffect.State.UNEXECUTED, sideEffect.state)
+        assertEquals(TestSideEffect.State.ENQUEUED, sideEffect.state)
 
         advanceTimeBy(1)
         runCurrent()
@@ -120,12 +120,13 @@ class SoloSideEffectHandlerTest {
 
     @ParameterizedTest
     @MethodSource("provideGetExecutingSideEffectsRules")
-    fun `getExecutingSideEffects returns current executing side effects`(
+    fun `getExecutingSideEffects returns current executing side effects except self`(
         testCase: SideEffectTestCaseStrategy<MutableList<ExecutingSideEffect<TestSideEffect>>>,
     ) = runUnconfinedTest {
         val collector = mutableListOf<ExecutingSideEffect<TestSideEffect>>()
+
         val executingSideEffect = TestSideEffect(executionRule {
-            setId(ExecutingSideEffect.Id.Custom("target"))
+            setId(ExecutingSideEffect.Id.Custom("executing"))
         })
         val checkSideEffect = TestSideEffect(testCase.createSideEffectRule(collector))
 
@@ -152,7 +153,7 @@ class SoloSideEffectHandlerTest {
         handler.onSideEffect(root)
         handler.onSideEffect(dependent)
 
-        assertEquals(TestSideEffect.State.UNEXECUTED, dependent.state)
+        assertEquals(TestSideEffect.State.ENQUEUED, dependent.state)
 
         root.complete()
 
@@ -174,7 +175,7 @@ class SoloSideEffectHandlerTest {
         handler.onSideEffect(dependendSideEffect)
         targetSideEffect.complete()
 
-        assertEquals(TestSideEffect.State.UNEXECUTED, dependendSideEffect.state)
+        assertEquals(TestSideEffect.State.ENQUEUED, dependendSideEffect.state)
     }
 
     @ParameterizedTest
@@ -302,7 +303,7 @@ class SoloSideEffectHandlerTest {
         override val executionRule: SoloExecutionRule<TestSideEffect> = SoloExecutionRule.independent(),
     ) : SoloSideEffect<TestDependencies, TestSideEffect, Event> {
 
-        var state: State = State.UNEXECUTED
+        var state: State = State.ENQUEUED
             private set
 
         private val eventChannel = Channel<Event>()
@@ -324,7 +325,7 @@ class SoloSideEffectHandlerTest {
             .onCompletion { state = if (it != null) State.CANCELLED else State.COMPLETED }
 
         enum class State {
-            UNEXECUTED,
+            ENQUEUED,
             EXECUTING,
             COMPLETED,
             CANCELLED,

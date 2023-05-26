@@ -24,6 +24,8 @@ import kotlin.time.Duration.Companion.milliseconds
 @OptIn(ExperimentalCoroutinesApi::class, ExperimentalStdlibApi::class)
 class SoloSideEffectHandlerTest {
 
+    // region Fixture
+
     private val dependencies = mockk<TestDependencies>()
 
     private val executingSideEffectsStore = spyk(
@@ -43,8 +45,31 @@ class SoloSideEffectHandlerTest {
         unmockkObject(SoloSideEffectHandler)
     }
 
+    // endregion
+
+    // region Specification (Tests)
+
+    // region General
+
     @Test
-    fun `handler properly tracks side effect statuses`() = runTest {
+    fun `id set in rule is executing sideEffect id`() = runUnconfinedTest {
+        val expectedId = ExecutingSideEffect.Id.Unique()
+        val sideEffect = TestSideEffect(executionRule {
+            setId(expectedId)
+        })
+
+        val handler = createSoloSideEffectHandler()
+        handler.onSideEffect(sideEffect)
+
+        val executingSideEffects = executingSideEffectsStore.get()
+
+        val executingSideEffect = assertNotNull(executingSideEffects.single())
+        assertEquals(expectedId, executingSideEffect.id)
+        assertEquals(sideEffect, executingSideEffect.sideEffect)
+    }
+
+    @Test
+    fun `handler tracks (updates) side effect statuses`() = runTest {
         val handler = createSoloSideEffectHandler()
         advanceUntilIdle()
 
@@ -78,21 +103,22 @@ class SoloSideEffectHandlerTest {
     }
 
     @Test
-    fun `rule id is sideEffect id`() = runUnconfinedTest {
-        val expectedId = ExecutingSideEffect.Id.Custom("custom")
-        val sideEffect = TestSideEffect(executionRule {
-            setId(expectedId)
-        })
+    fun `side effect events are handler output events`() = runUnconfinedTest {
+        val handler = createSoloSideEffectHandler(collectOutputEvents = false)
+        val sideEffect = TestSideEffect()
+        val handlerEvents = handler.outputEvents.toFlow().collectWithScope()
+        val expectedEvent = Event("expected")
 
-        val handler = createSoloSideEffectHandler()
         handler.onSideEffect(sideEffect)
 
-        val executingSideEffects = executingSideEffectsStore.get()
+        sideEffect.send(expectedEvent)
 
-        assertEquals(1, executingSideEffects.size)
-        assertEquals(expectedId, executingSideEffects.single().id)
-        assertEquals(sideEffect, executingSideEffects.single().sideEffect)
+        assertEquals(listOf(expectedEvent), handlerEvents)
     }
+
+    // endregion
+
+    // region Delaying execution of side effect
 
     @Test
     fun `delay on enqueue delays side effect execution`() = runTest {
@@ -118,6 +144,44 @@ class SoloSideEffectHandlerTest {
         assertEquals(TestSideEffect.State.EXECUTING, sideEffect.state)
     }
 
+    @Test
+    fun `await complete on enqueue delays execution until matched sideeffects complete`() = runUnconfinedTest {
+        val sideEffectForAwait = TestSideEffect()
+        val awaitingSideEffect = TestSideEffect(executionRule {
+            onEnqueue {
+                awaitComplete(InstanceFilter.Filter { it.sideEffect === sideEffectForAwait })
+            }
+        })
+
+        val handler = createSoloSideEffectHandler()
+        handler.onSideEffect(sideEffectForAwait)
+        handler.onSideEffect(awaitingSideEffect)
+
+        assertEquals(TestSideEffect.State.ENQUEUED, awaitingSideEffect.state)
+
+        sideEffectForAwait.complete()
+
+        assertEquals(TestSideEffect.State.EXECUTING, awaitingSideEffect.state)
+    }
+
+    @Test
+    fun `await complete on enqueue doesn't delay execution if no matched sideeffects executing`() = runUnconfinedTest {
+        val awaitingSideEffect = TestSideEffect(executionRule {
+            onEnqueue {
+                awaitComplete(InstanceFilter.Filter { false })
+            }
+        })
+
+        val handler = createSoloSideEffectHandler()
+        handler.onSideEffect(awaitingSideEffect)
+
+        assertEquals(TestSideEffect.State.EXECUTING, awaitingSideEffect.state)
+    }
+
+    // endregion
+
+    // region Actions to get current executing side effects
+
     @ParameterizedTest
     @MethodSource("provideGetExecutingSideEffectsRules")
     fun `getExecutingSideEffects returns current executing side effects except self`(
@@ -140,25 +204,43 @@ class SoloSideEffectHandlerTest {
     }
 
     @Test
-    fun `await complete on enqueue delays execution until specified sideeffects complete`() = runUnconfinedTest {
-        val root = TestSideEffect()
-
-        val dependent = TestSideEffect(executionRule {
-            onEnqueue {
-                awaitComplete(InstanceFilter.Filter { it.sideEffect === root })
+    fun `notify registered listener if matched side effect executed`() = runUnconfinedTest {
+        val targetSideEffect = TestSideEffect()
+        val listener = mockk<(ExecutingSideEffect<TestSideEffect>) -> Unit>(relaxed = true)
+        val listenerSideEffect = TestSideEffect(executionRule {
+            onExecute {
+                registerListener(InstanceFilter.Filter { it.sideEffect === targetSideEffect }, listener)
             }
         })
-
         val handler = createSoloSideEffectHandler()
-        handler.onSideEffect(root)
-        handler.onSideEffect(dependent)
 
-        assertEquals(TestSideEffect.State.ENQUEUED, dependent.state)
+        handler.onSideEffect(listenerSideEffect)
+        handler.onSideEffect(targetSideEffect)
 
-        root.complete()
-
-        assertEquals(TestSideEffect.State.EXECUTING, dependent.state)
+        verify { listener.invoke(match { it.sideEffect === targetSideEffect }) }
+        confirmVerified(listener)
     }
+
+    @Test
+    fun `don't notify registered listener if unmatched side effect executed`() = runUnconfinedTest {
+        val targetSideEffect = TestSideEffect()
+        val listener = mockk<(ExecutingSideEffect<TestSideEffect>) -> Unit>(relaxed = true)
+        val listenerSideEffect = TestSideEffect(executionRule {
+            onExecute {
+                registerListener(InstanceFilter.Filter { false }, listener)
+            }
+        })
+        val handler = createSoloSideEffectHandler()
+
+        handler.onSideEffect(listenerSideEffect)
+        handler.onSideEffect(targetSideEffect)
+
+        confirmVerified(listener)
+    }
+
+    // endregion
+
+    // region Skipping side effect execution
 
     @ParameterizedTest
     @MethodSource("provideSkipIfAlreadyExecutingRules")
@@ -191,6 +273,10 @@ class SoloSideEffectHandlerTest {
         assertEquals(TestSideEffect.State.EXECUTING, sideEffect.state)
     }
 
+    // endregion
+
+    // region Side effect cancellation
+
     @ParameterizedTest
     @MethodSource("provideCancelOtherRules")
     fun `cancelOther(_) cancels other side effect`(
@@ -213,7 +299,7 @@ class SoloSideEffectHandlerTest {
 
     @ParameterizedTest
     @MethodSource("provideSendSignalRules")
-    fun `cancelOnSignal cancels side effect when signal received`(
+    fun `cancelOnSignal cancels side effect when matched signal received`(
         testCase: SideEffectTestCaseStrategy<Any>,
     ) = runUnconfinedTest {
         val signal = Any()
@@ -232,54 +318,11 @@ class SoloSideEffectHandlerTest {
         assertEquals(TestSideEffect.State.CANCELLED, cancellableSideEffect.state)
     }
 
-    @Test
-    fun `notify registered listener for specified side effect executed`() = runUnconfinedTest {
-        val targetSideEffect = TestSideEffect()
-        val listener = mockk<(ExecutingSideEffect<TestSideEffect>) -> Unit>(relaxed = true)
-        val listenerSideEffect = TestSideEffect(executionRule {
-            onExecute {
-                registerListener(InstanceFilter.Filter { it.sideEffect === targetSideEffect }, listener)
-            }
-        })
-        val handler = createSoloSideEffectHandler()
+    // endregion
 
-        handler.onSideEffect(listenerSideEffect)
-        handler.onSideEffect(targetSideEffect)
+    // endregion
 
-        verify { listener.invoke(match { it.sideEffect === targetSideEffect }) }
-        confirmVerified(listener)
-    }
-
-    @Test
-    fun `don't notify registered listener if unspecified side effect executed`() = runUnconfinedTest {
-        val targetSideEffect = TestSideEffect()
-        val listener = mockk<(ExecutingSideEffect<TestSideEffect>) -> Unit>(relaxed = true)
-        val listenerSideEffect = TestSideEffect(executionRule {
-            onExecute {
-                registerListener(InstanceFilter.Filter { false }, listener)
-            }
-        })
-        val handler = createSoloSideEffectHandler()
-
-        handler.onSideEffect(listenerSideEffect)
-        handler.onSideEffect(targetSideEffect)
-
-        confirmVerified(listener)
-    }
-
-    @Test
-    fun `side effect events is handler output events`() = runUnconfinedTest {
-        val handler = createSoloSideEffectHandler(collectOutputEvents = false)
-        val sideEffect = TestSideEffect()
-        val handlerEvents = handler.outputEvents.toFlow().collectWithScope()
-        val expectedEvent = Event("expected")
-
-        handler.onSideEffect(sideEffect)
-
-        sideEffect.send(expectedEvent)
-
-        assertEquals(listOf(expectedEvent), handlerEvents)
-    }
+    // region Utils
 
     private suspend fun createSoloSideEffectHandler(
         collectOutputEvents: Boolean = true,

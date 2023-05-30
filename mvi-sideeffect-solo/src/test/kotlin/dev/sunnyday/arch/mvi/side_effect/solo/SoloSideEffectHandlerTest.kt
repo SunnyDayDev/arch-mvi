@@ -18,6 +18,7 @@ import org.junit.jupiter.params.provider.MethodSource
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -117,6 +118,36 @@ class SoloSideEffectHandlerTest {
         sideEffect.send(expectedEvent)
 
         assertEquals(listOf(expectedEvent), handlerEvents)
+    }
+
+    // endregion
+
+    // region Dispatchers (execution threads)
+
+    @Test
+    fun `side effect executes on specified common dispatcher`() = runUnconfinedTest {
+        val expectedDispatcher = UnconfinedTestDispatcher()
+        val handler = createSoloSideEffectHandler(sideEffectDispatcher = expectedDispatcher)
+
+        val sideEffect = DispatcherTrackingTestSideEffect()
+
+        handler.onSideEffect(sideEffect)
+
+        assertSame(expectedDispatcher, sideEffect.executeDispatcher)
+    }
+
+    @Test
+    fun `side effect executes on specified side effect dispatcher`() = runUnconfinedTest {
+        val expectedDispatcher = UnconfinedTestDispatcher()
+        val handler = createSoloSideEffectHandler()
+
+        val sideEffect = DispatcherTrackingTestSideEffect(executionRule {
+            setDispatcher(expectedDispatcher)
+        })
+
+        handler.onSideEffect(sideEffect)
+
+        assertSame(expectedDispatcher, sideEffect.executeDispatcher)
     }
 
     // endregion
@@ -329,13 +360,14 @@ class SoloSideEffectHandlerTest {
 
     private suspend fun createSoloSideEffectHandler(
         collectOutputEvents: Boolean = true,
+        sideEffectDispatcher: CoroutineDispatcher? = null,
     ): SoloSideEffectHandler<TestDependencies, TestSideEffect, Event> {
         val currentCoroutineContext = currentCoroutineContext()
 
         return SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>(
             dependencies = dependencies,
             coroutineScope = createTestSubScope(),
-            dispatcher = requireNotNull(currentCoroutineContext[CoroutineDispatcher]),
+            sideEffectDispatcher = sideEffectDispatcher ?: requireNotNull(currentCoroutineContext[CoroutineDispatcher]),
         ).also { handler ->
             if (collectOutputEvents) {
                 handler.outputEvents.toFlow().collectWithScope()
@@ -375,6 +407,18 @@ class SoloSideEffectHandlerTest {
             EXECUTING,
             COMPLETED,
             CANCELLED,
+        }
+    }
+
+    class DispatcherTrackingTestSideEffect(
+        executionRule: SoloExecutionRule<TestSideEffect> = SoloExecutionRule.independent(),
+    ) : TestSideEffect(executionRule) {
+
+        var executeDispatcher: CoroutineDispatcher? = null
+
+        override fun execute(dependency: TestDependencies): Flow<Event> {
+            return super.execute(dependency)
+                .onStart { executeDispatcher = currentCoroutineContext()[CoroutineDispatcher] }
         }
     }
 

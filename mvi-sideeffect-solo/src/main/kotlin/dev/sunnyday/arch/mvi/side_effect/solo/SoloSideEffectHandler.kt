@@ -3,7 +3,6 @@ package dev.sunnyday.arch.mvi.side_effect.solo
 import dev.sunnyday.arch.mvi.SideEffectHandler
 import dev.sunnyday.arch.mvi.primitive.ObservableEvent
 import dev.sunnyday.arch.mvi.coroutine.ktx.toObservable
-import dev.sunnyday.arch.mvi.primitive.Cancellable
 import dev.sunnyday.arch.mvi.side_effect.solo.SoloExecutionRuleConfig.*
 import dev.sunnyday.arch.mvi.side_effect.solo.util.AtomicStore
 import dev.sunnyday.arch.mvi.side_effect.solo.util.JvmAtomicReferenceStore
@@ -15,7 +14,7 @@ import kotlin.time.Duration
 class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Dependencies, SideEffect, Event>, Event : Any>(
     private val dependencies: Dependencies,
     private val coroutineScope: CoroutineScope,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val sideEffectDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : SideEffectHandler<SideEffect, Event> {
 
     private val sideEffectsFlow = MutableSharedFlow<SideEffect>()
@@ -58,6 +57,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         }
 
         return sideEffect.execute(dependencies)
+            .flowOn(rule.dispatcher ?: sideEffectDispatcher)
             .mergeWith(listenWhileExecuting(onExecuteRule))
             .onStart {
                 executingSideEffect.executionState = ExecutingSideEffect.ExecutionState.EXECUTING
@@ -216,6 +216,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
     private inner class SideEffectRule : SoloExecutionRuleConfig<SideEffect> {
 
         var sideEffectId: ExecutingSideEffect.Id = ExecutingSideEffect.Id.Unique()
+        var dispatcher: CoroutineDispatcher? = null
 
         var onEnqueueRule: (OnEnqueueBuilder<SideEffect>.() -> Unit)? = null
         var onExecuteRule: (OnExecuteBuilder<SideEffect>.() -> Unit)? = null
@@ -223,6 +224,10 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
 
         override fun setId(id: ExecutingSideEffect.Id): SoloExecutionRuleConfig<SideEffect> = apply {
             sideEffectId = id
+        }
+
+        override fun setDispatcher(dispatcher: CoroutineDispatcher): SoloExecutionRuleConfig<SideEffect> = apply {
+            this.dispatcher = dispatcher
         }
 
         override fun onEnqueue(

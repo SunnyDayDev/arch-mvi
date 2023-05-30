@@ -1,5 +1,6 @@
 package dev.sunnyday.arch.mvi.side_effect.solo
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlin.time.Duration
 
 fun interface SoloExecutionRule<SideEffect : Any> {
@@ -23,6 +24,8 @@ fun interface SoloExecutionRule<SideEffect : Any> {
 interface SoloExecutionRuleConfig<SideEffect : Any> {
 
     fun setId(id: ExecutingSideEffect.Id): SoloExecutionRuleConfig<SideEffect>
+
+    fun setDispatcher(dispatcher: CoroutineDispatcher): SoloExecutionRuleConfig<SideEffect>
 
     fun onEnqueue(config: OnEnqueueBuilder<SideEffect>.() -> Unit): SoloExecutionRuleConfig<SideEffect>
 

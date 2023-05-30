@@ -401,11 +401,11 @@ class SoloSideEffectHandlerTest {
                     handler: SoloSideEffectHandler<TestDependencies, TestSideEffect, Event>,
                     ruleSideEffect: TestSideEffect,
                 ) -> Unit = { _, _ -> },
-                ruleFactory: (target: T) -> SoloExecutionRule<TestSideEffect>,
+                executionRuleConfig: SoloExecutionRuleConfig<TestSideEffect>.(target: T) -> Unit,
             ): SideEffectHandlerTestCase<T> = object : SideEffectHandlerTestCase<T>(name) {
 
                 override fun createSideEffectRule(target: T): SoloExecutionRule<TestSideEffect> {
-                    return ruleFactory.invoke(target)
+                    return executionRule { executionRuleConfig(target) }
                 }
 
                 override fun onSideEffect(
@@ -428,24 +428,18 @@ class SoloSideEffectHandlerTest {
         fun provideCancelOtherTestCases(): List<SideEffectHandlerTestCase<TestSideEffect>> {
             return listOf(
                 SideEffectHandlerTestCase.create("onEnqueue") { target ->
-                    executionRule {
-                        onEnqueue {
-                            cancelOther(InstanceFilter.Filter { it.sideEffect === target })
-                        }
+                    onEnqueue {
+                        cancelOther(InstanceFilter.Filter { it.sideEffect === target })
                     }
                 },
                 SideEffectHandlerTestCase.create("onExecute") { target ->
-                    executionRule {
-                        onExecute {
-                            cancelOther(InstanceFilter.Filter { it.sideEffect === target })
-                        }
+                    onExecute {
+                        cancelOther(InstanceFilter.Filter { it.sideEffect === target })
                     }
                 },
                 SideEffectHandlerTestCase.create("onCancel", cancelRuleSideEffect()) { target ->
-                    executionRule {
-                        onCancel {
-                            cancelOther(InstanceFilter.Filter { it.sideEffect === target })
-                        }
+                    onCancel {
+                        cancelOther(InstanceFilter.Filter { it.sideEffect === target })
                     }
                 }
             )
@@ -455,17 +449,13 @@ class SoloSideEffectHandlerTest {
         fun provideSkipIfAlreadyExecutingTestCases(): List<SideEffectHandlerTestCase<TestSideEffect?>> {
             return listOf(
                 SideEffectHandlerTestCase.create("onEnqueue") { target ->
-                    executionRule {
-                        onEnqueue {
-                            skipIfAlreadyExecuting(InstanceFilter.Filter { it.sideEffect === target })
-                        }
+                    onEnqueue {
+                        skipIfAlreadyExecuting(InstanceFilter.Filter { it.sideEffect === target })
                     }
                 },
                 SideEffectHandlerTestCase.create("onExecute") { target ->
-                    executionRule {
-                        onExecute {
-                            skipIfAlreadyExecuting(InstanceFilter.Filter { it.sideEffect === target })
-                        }
+                    onExecute {
+                        skipIfAlreadyExecuting(InstanceFilter.Filter { it.sideEffect === target })
                     }
                 },
             )
@@ -475,24 +465,18 @@ class SoloSideEffectHandlerTest {
         fun provideSendSignalTestCases(): List<SideEffectHandlerTestCase<Any>> {
             return listOf(
                 SideEffectHandlerTestCase.create("onEnqueue") { signal ->
-                    executionRule {
-                        onEnqueue {
-                            sendSignal(signal)
-                        }
+                    onEnqueue {
+                        sendSignal(signal)
                     }
                 },
                 SideEffectHandlerTestCase.create("onExecute") { signal ->
-                    executionRule {
-                        onExecute {
-                            sendSignal(signal)
-                        }
+                    onExecute {
+                        sendSignal(signal)
                     }
                 },
                 SideEffectHandlerTestCase.create("onCancel", cancelRuleSideEffect()) { signal ->
-                    executionRule {
-                        onCancel {
-                            sendSignal(signal)
-                        }
+                    onCancel {
+                        sendSignal(signal)
                     }
                 },
             )
@@ -502,24 +486,18 @@ class SoloSideEffectHandlerTest {
         fun provideGetExecutingSideEffectsTestCases(): List<SideEffectHandlerTestCase<MutableList<ExecutingSideEffect<TestSideEffect>>>> {
             return listOf(
                 SideEffectHandlerTestCase.create("onEnqueue") { collector ->
-                    executionRule {
-                        onEnqueue {
-                            collector.addAll(getExecutingSideEffects())
-                        }
+                    onEnqueue {
+                        collector.addAll(getExecutingSideEffects())
                     }
                 },
                 SideEffectHandlerTestCase.create("onExecute") { collector ->
-                    executionRule {
-                        onExecute {
-                            collector.addAll(getExecutingSideEffects())
-                        }
+                    onExecute {
+                        collector.addAll(getExecutingSideEffects())
                     }
                 },
                 SideEffectHandlerTestCase.create("onCancel", cancelRuleSideEffect()) { collector ->
-                    executionRule {
-                        onCancel {
-                            collector.addAll(getExecutingSideEffects())
-                        }
+                    onCancel {
+                        collector.addAll(getExecutingSideEffects())
                     }
                 },
             )

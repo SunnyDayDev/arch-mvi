@@ -17,7 +17,10 @@ interface ExecutingSideEffect<out SideEffect : Any> : Cancellable {
         @Suppress("CanSealedSubClassBeObject")
         class Unique : Id
 
-        data class Custom(val id: Any) : Id
+        data class Custom(val id: Any) : Id {
+
+            override fun toString(): String = id.toString()
+        }
     }
 
     enum class ExecutionState {

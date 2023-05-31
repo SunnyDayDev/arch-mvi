@@ -1,6 +1,7 @@
-package dev.sunnyday.arch.mvi.side_effect.solo
+package dev.sunnyday.arch.mvi.side_effect.solo.internal
 
 import dev.sunnyday.arch.mvi.coroutine.ktx.toFlow
+import dev.sunnyday.arch.mvi.side_effect.solo.*
 import dev.sunnyday.arch.mvi.side_effect.solo.util.AtomicStore
 import dev.sunnyday.arch.mvi.side_effect.solo.util.JvmAtomicReferenceStore
 import dev.sunnyday.arch.mvi.test.*
@@ -16,10 +17,7 @@ import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
 import java.util.concurrent.TimeUnit
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertSame
-import kotlin.test.assertTrue
+import kotlin.test.*
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -394,6 +392,19 @@ class SoloSideEffectHandlerTest {
         testCase.onSideEffect(handler, signalSideEffect)
 
         assertEquals(TestSideEffect.State.CANCELLED, cancellableSideEffect.state)
+    }
+
+    // endregion
+
+    // region Miscellaneous
+
+    @Test
+    fun `side effects atomic store is JvmAtomicReferenceStore`() {
+        unmockkObject(SoloSideEffectHandler)
+
+        val store = SoloSideEffectHandler.createSideEffectsStore<TestSideEffect>()
+
+        assertIs<JvmAtomicReferenceStore<*>>(store)
     }
 
     // endregion

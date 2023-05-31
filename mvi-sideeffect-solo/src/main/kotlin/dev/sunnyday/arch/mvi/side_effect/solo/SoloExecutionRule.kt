@@ -54,7 +54,7 @@ interface SoloExecutionRuleConfig<SideEffect : Any> {
 
         fun <S : SideEffect> registerListener(
             filter: InstanceFilter<ExecutingSideEffect<SideEffect>, ExecutingSideEffect<S>>,
-            listener: (ExecutingSideEffect<S>) -> Unit
+            listener: (ExecutingSideEffect<S>) -> Unit,
         )
     }
 
@@ -69,7 +69,8 @@ interface SoloExecutionRuleConfig<SideEffect : Any> {
 
         fun <S : SideEffect> getExecutingSideEffects(
             filter: InstanceFilter<ExecutingSideEffect<SideEffect>, ExecutingSideEffect<S>>,
-        ): List<ExecutingSideEffect<S>>
+            handler: (List<ExecutingSideEffect<S>>) -> Unit,
+        )
     }
 }
 
@@ -81,6 +82,8 @@ inline fun <T : Any> executionRule(
     }
 }
 
-fun <SE : Any> SoloExecutionRuleConfig.Builder<SE>.getExecutingSideEffects(): List<ExecutingSideEffect<SE>> {
-    return getExecutingSideEffects(InstanceFilter.Filter { true })
+fun <SE : Any> SoloExecutionRuleConfig.Builder<SE>.getExecutingSideEffects(
+    handler: (List<ExecutingSideEffect<SE>>) -> Unit,
+) {
+    return getExecutingSideEffects(InstanceFilter.Filter { true }, handler)
 }

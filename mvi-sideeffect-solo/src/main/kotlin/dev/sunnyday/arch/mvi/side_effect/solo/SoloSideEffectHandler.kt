@@ -19,7 +19,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
 
     private val sideEffectsFlow = MutableSharedFlow<SideEffect>()
     private val signalFlow = MutableSharedFlow<Any>()
-    private val executingSideEffectsFlow = MutableSharedFlow<ExecutingSideEffect<SideEffect>>()
+    private val startedExecutingSideEffectsFlow = MutableSharedFlow<ExecutingSideEffect<SideEffect>>()
 
     private val executingSideEffectsStore: AtomicStore<Array<ExecutingSideEffect<SideEffect>>> =
         createSideEffectsStore()
@@ -29,7 +29,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         .shareIn(coroutineScope, SharingStarted.WhileSubscribed(), 0)
 
     override fun onSideEffect(sideEffect: SideEffect) {
-        coroutineScope.launch {
+        coroutineScope.launch(sideEffectDispatcher) {
             sideEffectsFlow.emit(sideEffect)
         }
     }
@@ -39,12 +39,10 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             .toObservable(coroutineScope)
 
     private suspend fun flatMapSideEffect(sideEffect: SideEffect): Flow<Event> {
-        val rule = SideEffectRule()
+        val rule = SoloExecutionRuleConfigInstance()
         sideEffect.executionRule.run { rule.build() }
 
-        val isActiveState = MutableStateFlow(true)
-
-        val executingSideEffect = addExecutingSideEffect(sideEffect, rule, isActiveState)
+        val executingSideEffect = addExecutingSideEffect(sideEffect, rule)
 
         proceedRule(executingSideEffect, rule.onEnqueueRule)
         if (executingSideEffect.executionState == ExecutingSideEffect.ExecutionState.COMPLETED) {
@@ -61,27 +59,26 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             .mergeWith(listenWhileExecuting(onExecuteRule))
             .onStart {
                 executingSideEffect.executionState = ExecutingSideEffect.ExecutionState.EXECUTING
-                executingSideEffectsFlow.emit(executingSideEffect)
+                startedExecutingSideEffectsFlow.emit(executingSideEffect)
             }
             .onCompletion {
                 transformExecutingSideEffects { executingSideEffects ->
                     executingSideEffects - executingSideEffect
                 }
                 executingSideEffect.executionState = ExecutingSideEffect.ExecutionState.COMPLETED
-                executingSideEffect.isActiveState.emit(false)
+                executingSideEffect.cancelInternal()
             }
             .takeUntil(getCancelSignal(executingSideEffect, rule, onExecuteRule))
     }
 
     private fun addExecutingSideEffect(
         sideEffect: SideEffect,
-        rule: SideEffectRule,
-        isActiveState: MutableStateFlow<Boolean>,
-    ): ExecutingSideEffectImpl {
-        val executingSideEffect = ExecutingSideEffectImpl(
+        rule: SoloExecutionRuleConfigInstance,
+    ): RealExecutingSideEffect<SideEffect> {
+        val executingSideEffect = RealExecutingSideEffect(
             id = rule.sideEffectId,
             sideEffect = sideEffect,
-            isActiveState = isActiveState,
+            coroutineScope = coroutineScope,
         )
 
         transformExecutingSideEffects { executingSideEffects ->
@@ -104,15 +101,13 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
     }
 
     private suspend fun proceedRule(
-        sideEffect: ExecutingSideEffectImpl,
-        rule: (OnEnqueueRule.() -> Unit)?,
-    ): OnEnqueueRule {
-        val onEnqueueRule = OnEnqueueRule(sideEffect)
-        rule?.let { execute -> onEnqueueRule.execute() }
+        sideEffect: RealExecutingSideEffect<SideEffect>,
+        rule: (OnAnyRuleBuilderInstance.() -> Unit)?,
+    ): OnAnyRuleBuilderInstance {
+        val onEnqueueRule = OnAnyRuleBuilderInstance(sideEffect)
+        rule?.let { configure -> onEnqueueRule.configure() }
 
-        onEnqueueRule.actions.forEach { action ->
-            action.invoke()
-        }
+        onEnqueueRule.execute()
 
         if (onEnqueueRule.isSkipped) {
             sideEffect.executionState = ExecutingSideEffect.ExecutionState.COMPLETED
@@ -122,9 +117,9 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
     }
 
     private fun getCancelSignal(
-        sideEffect: ExecutingSideEffectImpl,
-        rulesConfig: SideEffectRule,
-        onExecuteRule: OnEnqueueRule,
+        sideEffect: RealExecutingSideEffect<SideEffect>,
+        rulesConfig: SoloExecutionRuleConfigInstance,
+        onExecuteRule: OnAnyRuleBuilderInstance,
     ): Flow<Any> {
         val cancelSignalFlow = onExecuteRule.cancelOnSignalFilters
             .takeIf { it.isNotEmpty() }
@@ -137,25 +132,25 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             ?: emptyFlow()
 
         return merge(
-            sideEffect.isActiveState.filterNot { isActive -> isActive },
+            sideEffect.isActiveFlow.filterNot { isActive -> isActive },
             cancelSignalFlow,
         )
             .take(1)
             .onEach {
-                val onEnqueueRule = OnEnqueueRule(sideEffect)
-                rulesConfig.onCancelRule?.let { execute -> onEnqueueRule.execute() }
-                onEnqueueRule.actions.forEach { action -> action.invoke() }
+                val onEnqueueRule = OnAnyRuleBuilderInstance(sideEffect)
+                rulesConfig.onCancelRule?.let { configure -> onEnqueueRule.configure() }
+                onEnqueueRule.execute()
             }
     }
 
-    private fun <T> listenWhileExecuting(rule: OnEnqueueRule): Flow<T> {
-        val listenerFilters = rule.listenerFilters
+    private fun <T> listenWhileExecuting(rule: OnAnyRuleBuilderInstance): Flow<T> {
+        val listenerFilters = rule.executionSideEffectListeners
             .takeIf { it.isNotEmpty() }
             ?.toList()
             ?: return emptyFlow()
 
         return flow {
-            executingSideEffectsFlow.collect { sideEffect ->
+            startedExecutingSideEffectsFlow.collect { sideEffect ->
                 listenerFilters.forEach { filter ->
                     filter.invoke(sideEffect)
                 }
@@ -190,30 +185,7 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         return merge(this, other)
     }
 
-    private inner class ExecutingSideEffectImpl(
-        override val id: ExecutingSideEffect.Id,
-        override val sideEffect: SideEffect,
-        val isActiveState: MutableStateFlow<Boolean>,
-    ) : ExecutingSideEffect<SideEffect> {
-
-        override var executionState: ExecutingSideEffect.ExecutionState = ExecutingSideEffect.ExecutionState.ENQUEUED
-
-        override fun cancel() {
-            coroutineScope.launch {
-                cancelInternal()
-            }
-        }
-
-        suspend fun cancelInternal() {
-            isActiveState.emit(false)
-        }
-
-        override fun toString(): String {
-            return "ExecutingSideEffect($id)"
-        }
-    }
-
-    private inner class SideEffectRule : SoloExecutionRuleConfig<SideEffect> {
+    private inner class SoloExecutionRuleConfigInstance : SoloExecutionRuleConfig<SideEffect> {
 
         var sideEffectId: ExecutingSideEffect.Id = ExecutingSideEffect.Id.Unique()
         var dispatcher: CoroutineDispatcher? = null
@@ -249,27 +221,33 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         }
     }
 
-    private inner class OnEnqueueRule(
-        sideEffect: ExecutingSideEffect<SideEffect>,
-    ) : BuilderRule(sideEffect),
-        OnEnqueueBuilder<SideEffect>,
+    private inner class OnAnyRuleBuilderInstance(
+        private val executionSideEffect: ExecutingSideEffect<SideEffect>,
+    ) : OnEnqueueBuilder<SideEffect>,
         OnExecuteBuilder<SideEffect>,
         OnCancelBuilder<SideEffect> {
 
-        val actions = mutableListOf<suspend () -> Unit>()
+        val cancelOnSignalFilters = mutableListOf<InstanceFilter<Any, *>>()
+        val executionSideEffectListeners = mutableListOf<(ExecutingSideEffect<SideEffect>) -> Unit>()
 
         var isSkipped = false
+            private set
 
-        val cancelOnSignalFilters = mutableListOf<InstanceFilter<Any, *>>()
-        val listenerFilters = mutableListOf<(ExecutingSideEffect<SideEffect>) -> Unit>()
+        private val ruleActions = mutableListOf<suspend () -> Unit>()
 
         override fun skipIfAlreadyExecuting(filter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
-            if (isSkipped) return
-            isSkipped = executingSideEffectsStore.get().any(filter::accept)
+            ruleActions.add {
+                isSkipped = executingSideEffectsStore.get().any(filter::accept)
+
+                if (isSkipped) {
+                    cancelOnSignalFilters.clear()
+                    executionSideEffectListeners.clear()
+                }
+            }
         }
 
         override fun delay(duration: Duration) {
-            actions.add {
+            ruleActions.add {
                 delay(duration.inWholeMilliseconds)
             }
         }
@@ -277,12 +255,12 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         override fun awaitComplete(
             filter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>,
             failOnError: Boolean,
-            requireSuccess: Boolean
+            requireSuccess: Boolean,
         ) {
-            actions.add {
+            ruleActions.add {
                 executingSideEffectsStore.get().filter(filter::accept).forEach { sideEffect ->
-                    (sideEffect as SoloSideEffectHandler<*, *, *>.ExecutingSideEffectImpl)
-                        .isActiveState
+                    (sideEffect as RealExecutingSideEffect)
+                        .isActiveFlow
                         .filterNot { it }
                         .firstOrNull()
                 }
@@ -290,19 +268,21 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
         }
 
         override fun registerCancelOnSignal(signalFilter: InstanceFilter<Any, *>) {
-            cancelOnSignalFilters.add(signalFilter)
+            ruleActions.add {
+                cancelOnSignalFilters.add(signalFilter)
+            }
         }
 
         override fun sendSignal(signal: Any) {
-            coroutineScope.launch {
+            ruleActions.add {
                 signalFlow.emit(signal)
             }
         }
 
         override fun cancelOther(sideEffectsFilter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
-            actions.add {
+            ruleActions.add {
                 executingSideEffectsStore.get().filter(sideEffectsFilter::accept).forEach { sideEffect ->
-                    (sideEffect as SoloSideEffectHandler<*, *, *>.ExecutingSideEffectImpl)
+                    (sideEffect as RealExecutingSideEffect)
                         .cancelInternal()
                 }
             }
@@ -312,32 +292,66 @@ class SoloSideEffectHandler<Dependencies : Any, SideEffect : SoloSideEffect<Depe
             filter: InstanceFilter<ExecutingSideEffect<SideEffect>, ExecutingSideEffect<S>>,
             listener: (ExecutingSideEffect<S>) -> Unit
         ) {
-            listenerFilters.add { sideEffect ->
-                if (filter.accept(sideEffect)) {
-                    listener.invoke(filter.get(sideEffect))
+            ruleActions.add {
+                executionSideEffectListeners.add { sideEffect ->
+                    if (filter.accept(sideEffect)) {
+                        listener.invoke(filter.get(sideEffect))
+                    }
                 }
             }
         }
-    }
-
-    private abstract inner class BuilderRule(
-        protected val ruleExecutingSideEffect: ExecutingSideEffect<SideEffect>,
-    ) : Builder<SideEffect> {
 
         override fun <S : SideEffect> getExecutingSideEffects(
-            filter: InstanceFilter<ExecutingSideEffect<SideEffect>, ExecutingSideEffect<S>>
-        ): List<ExecutingSideEffect<S>> {
-            while (true) {
-                val source = executingSideEffectsStore.get()
-                val filteredResult = source.mapNotNull { executingSideEffect ->
-                    executingSideEffect.takeIf { it !== ruleExecutingSideEffect && filter.accept(it) }
-                        ?.let(filter::get)
-                }
+            filter: InstanceFilter<ExecutingSideEffect<SideEffect>, ExecutingSideEffect<S>>,
+            handler: (List<ExecutingSideEffect<S>>) -> Unit,
+        ) {
+            ruleActions.add {
+                while (true) {
+                    val source = executingSideEffectsStore.get()
+                    val filteredResult = source.mapNotNull { executingSideEffect ->
+                        executingSideEffect.takeIf { it !== executionSideEffect && filter.accept(it) }
+                            ?.let(filter::get)
+                    }
 
-                if (source === executingSideEffectsStore.get()) {
-                    return filteredResult
+                    if (source === executingSideEffectsStore.get()) {
+                        handler.invoke(filteredResult)
+                        break
+                    }
                 }
             }
+        }
+
+        suspend fun execute() {
+            ruleActions.asSequence()
+                .takeWhile { !isSkipped }
+                .forEach { action -> action.invoke() }
+        }
+    }
+
+    private class RealExecutingSideEffect<SideEffect : SoloSideEffect<*, SideEffect, *>>(
+        override val id: ExecutingSideEffect.Id,
+        override val sideEffect: SideEffect,
+        private val coroutineScope: CoroutineScope,
+    ) : ExecutingSideEffect<SideEffect> {
+
+        override var executionState: ExecutingSideEffect.ExecutionState = ExecutingSideEffect.ExecutionState.ENQUEUED
+
+        val isActiveFlow: StateFlow<Boolean>
+            get() = _isActiveFlow
+        private val _isActiveFlow: MutableStateFlow<Boolean> = MutableStateFlow(true)
+
+        override fun cancel() {
+            coroutineScope.launch {
+                cancelInternal()
+            }
+        }
+
+        suspend fun cancelInternal() {
+            _isActiveFlow.emit(false)
+        }
+
+        override fun toString(): String {
+            return "ExecutingSideEffect($id)"
         }
     }
 

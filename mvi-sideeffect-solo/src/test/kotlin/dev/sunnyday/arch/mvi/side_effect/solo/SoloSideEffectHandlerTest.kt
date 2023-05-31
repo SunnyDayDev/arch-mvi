@@ -20,6 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 @Timeout(10, unit = TimeUnit.SECONDS)
@@ -152,6 +153,42 @@ class SoloSideEffectHandlerTest {
 
     // endregion
 
+    // region Skipping side effect execution
+
+    @ParameterizedTest
+    @MethodSource("provideSkipIfAlreadyExecutingTestCases")
+    fun `skip if already executing specified sideeffect`(
+        skipIfAlreadyExecutingRuleFactory: SideEffectHandlerTestCase<TestSideEffect>
+    ) = runUnconfinedTest {
+        val targetSideEffect = TestSideEffect()
+        val dependendSideEffect = TestSideEffect(
+            skipIfAlreadyExecutingRuleFactory.createSideEffectRule(targetSideEffect)
+        )
+
+        val handler = createSoloSideEffectHandler()
+
+        handler.onSideEffect(targetSideEffect)
+        handler.onSideEffect(dependendSideEffect)
+        targetSideEffect.complete()
+
+        assertEquals(TestSideEffect.State.UNEXECUTED, dependendSideEffect.state)
+    }
+
+    @ParameterizedTest
+    @MethodSource("provideSkipIfAlreadyExecutingTestCases")
+    fun `don't skip if already executing sideeffect isn't present`(
+        testCase: SideEffectHandlerTestCase<TestSideEffect?>
+    ) = runUnconfinedTest {
+        val sideEffect = TestSideEffect(testCase.createSideEffectRule(null))
+
+        val handler = createSoloSideEffectHandler()
+        handler.onSideEffect(sideEffect)
+
+        assertEquals(TestSideEffect.State.EXECUTING, sideEffect.state)
+    }
+
+    // endregion
+
     // region Delaying execution of side effect
 
     @Test
@@ -171,11 +208,32 @@ class SoloSideEffectHandlerTest {
         advanceTimeBy(delayDuration.inWholeMilliseconds - 1)
         runCurrent()
 
-        assertEquals(TestSideEffect.State.ENQUEUED, sideEffect.state)
+        assertEquals(TestSideEffect.State.UNEXECUTED, sideEffect.state)
 
         advanceTimeBy(1)
         runCurrent()
         assertEquals(TestSideEffect.State.EXECUTING, sideEffect.state)
+    }
+
+    @Test
+    fun `don't delay on enqueue if side effect is skipped`() = runTest {
+        val sideEffect = TestSideEffect(executionRule {
+            onEnqueue {
+                skipIfAlreadyExecuting(InstanceFilter.Filter { true })
+                delay(100.milliseconds)
+            }
+        })
+
+        val handler = createSoloSideEffectHandler()
+        handler.onSideEffect(TestSideEffect())
+        advanceUntilIdle()
+
+        val expectedTime = testScheduler.currentTime
+
+        handler.onSideEffect(sideEffect)
+        advanceUntilIdle()
+
+        assertEquals(expectedTime, testScheduler.currentTime)
     }
 
     @Test
@@ -191,7 +249,7 @@ class SoloSideEffectHandlerTest {
         handler.onSideEffect(sideEffectForAwait)
         handler.onSideEffect(awaitingSideEffect)
 
-        assertEquals(TestSideEffect.State.ENQUEUED, awaitingSideEffect.state)
+        assertEquals(TestSideEffect.State.UNEXECUTED, awaitingSideEffect.state)
 
         sideEffectForAwait.complete()
 
@@ -210,6 +268,27 @@ class SoloSideEffectHandlerTest {
         handler.onSideEffect(awaitingSideEffect)
 
         assertEquals(TestSideEffect.State.EXECUTING, awaitingSideEffect.state)
+    }
+
+    @Test
+    fun `don't await complete on enqueue if side effect is skipped`() = runTest {
+        val sideEffect = TestSideEffect(executionRule {
+            onEnqueue {
+                skipIfAlreadyExecuting(InstanceFilter.Filter { true })
+                awaitComplete(InstanceFilter.Filter { true })
+            }
+        })
+        val awaitCompleteTriggerSideEffect = TestSideEffect()
+
+        val handler = createSoloSideEffectHandler()
+        handler.onSideEffect(TestSideEffect())
+        runCurrent()
+
+        handler.onSideEffect(sideEffect)
+        awaitCompleteTriggerSideEffect.complete()
+        runCurrent()
+
+        assertEquals(TestSideEffect.State.UNEXECUTED, sideEffect.state)
     }
 
     // endregion
@@ -270,41 +349,6 @@ class SoloSideEffectHandlerTest {
         handler.onSideEffect(targetSideEffect)
 
         confirmVerified(listener)
-    }
-
-    // endregion
-
-    // region Skipping side effect execution
-
-    @ParameterizedTest
-    @MethodSource("provideSkipIfAlreadyExecutingTestCases")
-    fun `skip if already executing specified sideeffect`(
-        skipIfAlreadyExecutingRuleFactory: SideEffectHandlerTestCase<TestSideEffect>
-    ) = runUnconfinedTest {
-        val targetSideEffect = TestSideEffect()
-        val dependendSideEffect =
-            TestSideEffect(skipIfAlreadyExecutingRuleFactory.createSideEffectRule(targetSideEffect))
-
-        val handler = createSoloSideEffectHandler()
-
-        handler.onSideEffect(targetSideEffect)
-        handler.onSideEffect(dependendSideEffect)
-        targetSideEffect.complete()
-
-        assertEquals(TestSideEffect.State.ENQUEUED, dependendSideEffect.state)
-    }
-
-    @ParameterizedTest
-    @MethodSource("provideSkipIfAlreadyExecutingTestCases")
-    fun `don't skip if already executing sideeffect isn't present`(
-        testCase: SideEffectHandlerTestCase<TestSideEffect?>
-    ) = runUnconfinedTest {
-        val sideEffect = TestSideEffect(testCase.createSideEffectRule(null))
-
-        val handler = createSoloSideEffectHandler()
-        handler.onSideEffect(sideEffect)
-
-        assertEquals(TestSideEffect.State.EXECUTING, sideEffect.state)
     }
 
     // endregion
@@ -379,9 +423,10 @@ class SoloSideEffectHandlerTest {
 
     open class TestSideEffect(
         override val executionRule: SoloExecutionRule<TestSideEffect> = SoloExecutionRule.independent(),
+        private val minDuration: Duration = 0.milliseconds,
     ) : SoloSideEffect<TestDependencies, TestSideEffect, Event> {
 
-        var state: State = State.ENQUEUED
+        var state: State = State.UNEXECUTED
             private set
 
         private val eventChannel = Channel<Event>()
@@ -394,16 +439,28 @@ class SoloSideEffectHandlerTest {
             eventChannel.close()
         }
 
-        override fun execute(dependency: TestDependencies): Flow<Event> = flow {
-            for (event in eventChannel) {
-                emit(event)
-            }
-        }
+        override fun execute(dependency: TestDependencies): Flow<Event> = merge(eventsFlow(), minDurationFlow())
             .onStart { state = State.EXECUTING }
             .onCompletion { state = if (it != null) State.CANCELLED else State.COMPLETED }
 
+        private fun eventsFlow(): Flow<Event> {
+            return flow {
+                for (event in eventChannel) {
+                    emit(event)
+                }
+            }
+        }
+
+        private fun minDurationFlow(): Flow<Event> {
+            return if (minDuration.isPositive()) {
+                flow { delay(minDuration.inWholeMilliseconds) }
+            } else {
+                emptyFlow()
+            }
+        }
+
         enum class State {
-            ENQUEUED,
+            UNEXECUTED,
             EXECUTING,
             COMPLETED,
             CANCELLED,
@@ -531,17 +588,17 @@ class SoloSideEffectHandlerTest {
             return listOf(
                 SideEffectHandlerTestCase.create("onEnqueue") { collector ->
                     onEnqueue {
-                        collector.addAll(getExecutingSideEffects())
+                        getExecutingSideEffects(collector::addAll)
                     }
                 },
                 SideEffectHandlerTestCase.create("onExecute") { collector ->
                     onExecute {
-                        collector.addAll(getExecutingSideEffects())
+                        getExecutingSideEffects(collector::addAll)
                     }
                 },
                 SideEffectHandlerTestCase.create("onCancel", cancelRuleSideEffect()) { collector ->
                     onCancel {
-                        collector.addAll(getExecutingSideEffects())
+                        getExecutingSideEffects(collector::addAll)
                     }
                 },
             )

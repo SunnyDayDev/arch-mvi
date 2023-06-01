@@ -1,6 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
-    // `maven-publish`
+    `maven-publish`
 }
 
 tasks.test {
@@ -25,14 +25,14 @@ dependencies {
     testImplementation(libs.test.mockk)
 }
 
-// publishing {
-//     publications {
-//         create<MavenPublication>("maven") {
-//             groupId = "dev.sunnyday.arch-mvi"
-//             artifactId = "mvi-sideeffect-solo"
-//             version = "0.1"
-//
-//             from(components["kotlin"])
-//         }
-//     }
-// }
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            groupId = "dev.sunnyday.arch-mvi"
+            artifactId = "mvi-sideeffect-solo"
+            version = "0.1"
+
+            from(components["kotlin"])
+        }
+    }
+}

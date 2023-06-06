@@ -2,6 +2,7 @@ package dev.sunnyday.arch.mvi.side_effect.solo.internal
 
 import dev.sunnyday.arch.mvi.coroutine.ktx.toFlow
 import dev.sunnyday.arch.mvi.side_effect.solo.*
+import dev.sunnyday.arch.mvi.side_effect.solo.filter.side_effect.sideEffectsWithType
 import dev.sunnyday.arch.mvi.side_effect.solo.util.AtomicStore
 import dev.sunnyday.arch.mvi.side_effect.solo.util.JvmAtomicReferenceStore
 import dev.sunnyday.arch.mvi.test.*
@@ -180,6 +181,22 @@ class SoloSideEffectHandlerTest {
         val sideEffect = TestSideEffect(testCase.createSideEffectRule(null))
 
         val handler = createSoloSideEffectHandler()
+        handler.onSideEffect(sideEffect)
+
+        assertEquals(TestSideEffect.State.EXECUTING, sideEffect.state)
+    }
+
+    @ParameterizedTest
+    @MethodSource("provideSkipIfAlreadyExecutingTestCases")
+    fun `don't skip if already executing is self`() = runUnconfinedTest {
+        val sideEffect = TestSideEffect(executionRule {
+            onEnqueue {
+                skipIfAlreadyExecuting(sideEffectsWithType<TestSideEffect>())
+            }
+        })
+
+        val handler = createSoloSideEffectHandler()
+
         handler.onSideEffect(sideEffect)
 
         assertEquals(TestSideEffect.State.EXECUTING, sideEffect.state)
@@ -413,7 +430,7 @@ class SoloSideEffectHandlerTest {
 
     // region Utils
 
-    private suspend fun createSoloSideEffectHandler(
+    private suspend fun TestScope.createSoloSideEffectHandler(
         collectOutputEvents: Boolean = true,
         sideEffectDispatcher: CoroutineDispatcher? = null,
     ): SoloSideEffectHandler<TestDependencies, TestSideEffect, Event> {
@@ -426,6 +443,7 @@ class SoloSideEffectHandlerTest {
         ).also { handler ->
             if (collectOutputEvents) {
                 handler.outputEvents.toFlow().collectWithScope()
+                runCurrent()
             }
         }
     }
@@ -435,6 +453,7 @@ class SoloSideEffectHandlerTest {
     open class TestSideEffect(
         override val executionRule: SoloExecutionRule<TestSideEffect> = SoloExecutionRule.independent(),
         private val minDuration: Duration = 0.milliseconds,
+        private val tag: String? = null,
     ) : SoloSideEffect<TestDependencies, TestSideEffect, Event> {
 
         var state: State = State.UNEXECUTED
@@ -468,6 +487,10 @@ class SoloSideEffectHandlerTest {
             } else {
                 emptyFlow()
             }
+        }
+
+        override fun toString(): String {
+            return tag?.let { "TestSideEffect($it)" } ?: super.toString()
         }
 
         enum class State {

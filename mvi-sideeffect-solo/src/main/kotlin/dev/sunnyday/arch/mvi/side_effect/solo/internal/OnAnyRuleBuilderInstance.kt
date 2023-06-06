@@ -27,7 +27,7 @@ internal class OnAnyRuleBuilderInstance<SideEffect : Any>(
 
     override fun skipIfAlreadyExecuting(filter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
         ruleActions.add {
-            isSkipped = executingSideEffectsStore.get().any(filter::accept)
+            isSkipped = hasExecutingSideEffects(filter)
 
             if (isSkipped) {
                 cancelOnSignalFilters.clear()
@@ -48,12 +48,13 @@ internal class OnAnyRuleBuilderInstance<SideEffect : Any>(
         requireSuccess: Boolean,
     ) {
         ruleActions.add {
-            executingSideEffectsStore.get().filter(filter::accept).forEach { sideEffect ->
-                (sideEffect as InternalExecutingSideEffect)
-                    .isActiveFlow
-                    .filterNot { it }
-                    .firstOrNull()
-            }
+            getExecutingSideEffects(filter)
+                .forEach { sideEffect ->
+                    (sideEffect as InternalExecutingSideEffect)
+                        .isActiveFlow
+                        .filterNot { it }
+                        .firstOrNull()
+                }
         }
     }
 
@@ -71,10 +72,11 @@ internal class OnAnyRuleBuilderInstance<SideEffect : Any>(
 
     override fun cancelOther(sideEffectsFilter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>) {
         ruleActions.add {
-            executingSideEffectsStore.get().filter(sideEffectsFilter::accept).forEach { sideEffect ->
-                (sideEffect as InternalExecutingSideEffect)
-                    .cancelInternal()
-            }
+            getExecutingSideEffects(sideEffectsFilter)
+                .forEach { sideEffect ->
+                    (sideEffect as InternalExecutingSideEffect)
+                        .cancelInternal()
+                }
         }
     }
 
@@ -96,18 +98,8 @@ internal class OnAnyRuleBuilderInstance<SideEffect : Any>(
         handler: (List<ExecutingSideEffect<S>>) -> Unit,
     ) {
         ruleActions.add {
-            while (true) {
-                val source = executingSideEffectsStore.get()
-                val filteredResult = source.mapNotNull { executingSideEffect ->
-                    executingSideEffect.takeIf { it !== executionSideEffect && filter.accept(it) }
-                        ?.let(filter::get)
-                }
-
-                if (source === executingSideEffectsStore.get()) {
-                    handler.invoke(filteredResult)
-                    break
-                }
-            }
+            val executionSideEffects = getExecutingSideEffects(filter).map(filter::get)
+            handler.invoke(executionSideEffects)
         }
     }
 
@@ -115,5 +107,19 @@ internal class OnAnyRuleBuilderInstance<SideEffect : Any>(
         ruleActions.asSequence()
             .takeWhile { !isSkipped }
             .forEach { action -> action.invoke() }
+    }
+
+    private fun getExecutingSideEffects(
+        filter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>
+    ): List<ExecutingSideEffect<SideEffect>> {
+        return executingSideEffectsStore.get()
+            .filter { it !== executionSideEffect && filter.accept(it) }
+    }
+
+    private fun hasExecutingSideEffects(
+        filter: InstanceFilter<ExecutingSideEffect<SideEffect>, *>
+    ): Boolean {
+        return executingSideEffectsStore.get()
+            .any { it !== executionSideEffect && filter.accept(it) }
     }
 }

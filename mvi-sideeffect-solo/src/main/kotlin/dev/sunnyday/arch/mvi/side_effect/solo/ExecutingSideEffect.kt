@@ -15,7 +15,12 @@ interface ExecutingSideEffect<out SideEffect : Any> : Cancellable {
         object Undefined : Id
 
         @Suppress("CanSealedSubClassBeObject")
-        class Unique : Id
+        class Unique : Id {
+
+            override fun toString(): String {
+                return "Id.Unique@${super.toString().substringAfterLast('@')}"
+            }
+        }
 
         data class Custom(val id: Any) : Id {
 
